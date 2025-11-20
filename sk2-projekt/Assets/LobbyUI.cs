@@ -1,16 +1,26 @@
+using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 public class LobbyUI : MonoBehaviour
 {
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
-    void Start()
+    [SerializeField] private TMP_InputField _nameInputField;
+    [SerializeField] private TMP_InputField _adressInputField;
+    [SerializeField] private TMP_InputField _portInputField;
+
+    [SerializeField] private Button _joinButton;
+
+    private void Awake()
     {
-        
+        _joinButton.onClick.AddListener(OnJoinButton);
     }
 
-    // Update is called once per frame
-    void Update()
+    private void OnJoinButton()
     {
-        
+        if(!int.TryParse(_portInputField.text, out int port)) {
+            Debug.Log("Incorrect port!");
+            return;
+        }
+        //NetworkManager.ConnectToServer(_adressInputField.text, port);
     }
 }
