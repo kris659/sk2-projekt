@@ -4,9 +4,14 @@ using System.Net.Sockets;
 using System.Text;
 using UnityEngine;
 
-public class NetworkManager : MonoBehaviour
+public class NetworkManager : MonoBehaviourSingleton<NetworkManager>
 {
-    public async static void ConnectToServer(string adress, int port)
+
+    public event Action ConnectedToServer;
+    public event Action<string> MessageReceived;
+
+    private Socket _serverConnection;
+    public async void ConnectToServer(string adress, int port)
     {
         IPHostEntry ipHost = Dns.GetHostEntry(Dns.GetHostName());
         if (!IPAddress.TryParse(adress, out IPAddress ipAddr)){
@@ -15,32 +20,40 @@ public class NetworkManager : MonoBehaviour
         }
         IPEndPoint ipEndPoint = new IPEndPoint(ipAddr, port);
 
-        using Socket client = new(
+        //_connection = 
+        _serverConnection = new(
             ipEndPoint.AddressFamily,
             SocketType.Stream,
             ProtocolType.Tcp);
 
-        await client.ConnectAsync(ipEndPoint);
-        while (true) {
-            // Send message.
-            var message = "Hi friends !<|EOM|>";
-            var messageBytes = Encoding.UTF8.GetBytes(message);
-            _ = await client.SendAsync(messageBytes, SocketFlags.None);
-            Console.WriteLine($"Socket client sent message: \"{message}\"");
-
-            // Receive ack.
+        MessageReceived?.Invoke("Trying to connect...");
+        await _serverConnection.ConnectAsync(ipEndPoint);
+        MessageReceived?.Invoke("Connected to server...");
+        // Receive messages
+        while (_serverConnection != null && _serverConnection.Connected) {
             var buffer = new byte[1_024];
-            var received = await client.ReceiveAsync(buffer, SocketFlags.None);
+            var received = await _serverConnection.ReceiveAsync(buffer, SocketFlags.None);
             var response = Encoding.UTF8.GetString(buffer, 0, received);
-            if (response == "<|ACK|>") {
-                Debug.Log($"Socket client received acknowledgment: \"{response}\"");
-                break;
-            }
-            // Sample output:
-            //     Socket client sent message: "Hi friends !<|EOM|>"
-            //     Socket client received acknowledgment: "<|ACK|>"
-        }
 
-        client.Shutdown(SocketShutdown.Both);
+            Debug.Log($"Recived: {response}");
+            MessageReceived?.Invoke(response);
+        }
+    }
+
+    public async void SendMessageToServer(string message)
+    {
+        Debug.Log("Sending message...");
+        var messageBytes = Encoding.UTF8.GetBytes(message);
+        _ = await _serverConnection.SendAsync(messageBytes, SocketFlags.None);
+        Debug.Log($"Socket client sent message: \"{message}\"");
+    }
+
+    private void OnDestroy()
+    {
+        if (_serverConnection != null) {
+            if(_serverConnection.Connected)
+                _serverConnection.Shutdown(SocketShutdown.Both);
+            _serverConnection.Dispose();
+        }
     }
 }

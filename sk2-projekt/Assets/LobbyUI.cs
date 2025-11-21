@@ -10,8 +10,11 @@ public class LobbyUI : MonoBehaviour
 
     [SerializeField] private Button _joinButton;
 
+    private GameObject _content;
+
     private void Awake()
     {
+        _content = transform.GetChild(0).gameObject;
         _joinButton.onClick.AddListener(OnJoinButton);
     }
 
@@ -21,6 +24,7 @@ public class LobbyUI : MonoBehaviour
             Debug.Log("Incorrect port!");
             return;
         }
-        //NetworkManager.ConnectToServer(_adressInputField.text, port);
+        NetworkManager.Instance.ConnectToServer(_adressInputField.text, port);
+        _content.SetActive(false);
     }
 }
