@@ -20,13 +20,13 @@ void ctrl_c(int);
 void sendToAllBut(int fd, const char *buffer, int count);
 
 // server socket
-int servFd;
+int tcpFd;
 
 // client sockets
 std::unordered_set<int> clientFds;
 
 int main(int argc, char **argv) {
-    servFd = getaddrinfo_socket_bind_listen(argc, argv);
+    tcpFd = getaddrinfo_socket_bind_listen(argc, argv);
     // set up ctrl+c handler for a graceful exit
     signal(SIGINT, ctrl_c);
     // prevent dead sockets from throwing pipe errors on write
@@ -40,7 +40,7 @@ int main(int argc, char **argv) {
         socklen_t clientAddrSize = sizeof(clientAddr);
 
         // accept new connection
-        auto clientFd = accept(servFd, (sockaddr *)&clientAddr, &clientAddrSize);
+        auto clientFd = accept(tcpFd, (sockaddr *)&clientAddr, &clientAddrSize);
         if (clientFd == -1)
             perror("accept failed");
 
@@ -90,7 +90,7 @@ void ctrl_c(int) {
         // it will be discarded upon 'close'
         close(clientFd); 
     }
-    close(servFd);
+    close(tcpFd);
     printf("Closing server\n");
     exit(0);
 }
@@ -130,19 +130,19 @@ int getaddrinfo_socket_bind_listen(int argc, const char *const *argv) {
     if (rv) error(1, 0, "getaddrinfo: %s", gai_strerror(rv));
 
     // create socket
-    int servFd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    if (servFd == -1) error(1, errno, "socket failed");
+    int tcpFd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (tcpFd == -1) error(1, errno, "socket failed");
 
     // try to set REUSEADDR
     const int one = 1;
-    setsockopt(servFd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    setsockopt(tcpFd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 
     // bind to address as resolved by getaddrinfo
-    if (bind(servFd, res->ai_addr, res->ai_addrlen))
+    if (bind(tcpFd, res->ai_addr, res->ai_addrlen))
         error(1, errno, "bind failed");
 
     // enter listening mode
-    if (listen(servFd, 1))
+    if (listen(tcpFd, 1))
         error(1, errno, "listen failed");
-    return servFd;
+    return tcpFd;
 }

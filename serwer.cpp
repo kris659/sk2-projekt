@@ -10,8 +10,28 @@
 #include <thread>
 #include <mutex>
 
+#include <cstdlib>
+#include <cstring>
+#include <errno.h>
+#include <string>
+
+// server socket
+int tcpFd;
+int updFd;
+int epollDesc;
+
+// client sockets
+std::unordered_set<int> clientFds;
+
+template <typename... Args> /* This mimics GNU 'error' function */
+void error(int status, int errnum, const char *format, Args... args) {
+    fprintf(stderr, (format + std::string(errnum ? ": %s\n" : "\n")).c_str(), args..., strerror(errnum));
+    if (status) exit(status);
+}
+
 // creates a socket listening on port specified in argv[1]
-int getaddrinfo_socket_bind_listen(int argc, const char *const *argv);
+// int getaddrinfo_socket_bind_listen(int argc, const char *const *argv);
+int getaddrinfo_socket_bind_listen(int sockType, const char *argv);
 
 // handles SIGINT
 void ctrl_c(int);
@@ -19,14 +39,78 @@ void ctrl_c(int);
 // sends data to clientFds excluding fd
 void sendToAllBut(int fd, const char *buffer, int count);
 
-// server socket
-int servFd;
+int getRandomNumberInRange(int min, int max){
+    
+    int randomNum = min + rand() % (max - min);
+    return randomNum; 
+}
 
-// client sockets
-std::unordered_set<int> clientFds;
+void handleNewClient(epoll_event ee){
+    char buffer[255];
+    // prepare placeholders for client address
+    sockaddr_storage clientAddr{0};
+    socklen_t clientAddrSize = sizeof(clientAddr);
+
+    // accept new connection
+    auto clientFd = accept(tcpFd, (sockaddr *)&clientAddr, &clientAddrSize);
+    if (clientFd == -1)
+        perror("accept failed");
+
+    // add client to all clients set
+    clientFds.insert(clientFd);
+
+    // tell who has connected
+    char host[NI_MAXHOST], port[NI_MAXSERV];
+    getnameinfo((sockaddr *)&clientAddr, clientAddrSize, host, NI_MAXHOST, port, NI_MAXSERV, 0);
+    printf("new connection from: %s:%s (fd: %d)\n", host, port, clientFd);
+
+
+    ee.data.fd = clientFd;
+    epoll_ctl(epollDesc, EPOLL_CTL_ADD, clientFd, &ee);
+
+    send(clientFd, "skip", 5, 0);
+}
+
+void tpcHandleMessageFromClient(epoll_event ee){
+    int clientFd = ee.data.fd;
+
+    char buffer[255];
+    int count = read(clientFd, buffer, 255);
+
+
+    if (count < 1) {
+        printf("removing %d\n", clientFd);
+        clientFds.erase(clientFd);
+        close(clientFd);
+        continue;
+    } else {
+        if(clientFd != STDOUT_FILENO)
+            write(STDOUT_FILENO, buffer, count);
+        sendToAllBut(clientFd, buffer, count);
+    }
+}
+
+
+void udpHandleMessageFromClient(epoll_event ee){
+    int clientFd = ee.data.fd;
+
+    char buffer[255];
+    int count = read(updFd, buffer, 255);
+
+    printf(buffer);
+}
 
 int main(int argc, char **argv) {
-    servFd = getaddrinfo_socket_bind_listen(argc, argv);
+    if (argc != 3) error(1, 0, "Usage: %s <tcp-port> <udp-port>", argv[0]);
+    if (atoi(argv[1]) == atoi(argv[2]))
+        error(1, 0, "TCP and UDP ports must differ");
+    if (atoi(argv[1]) > 65535 || atoi(argv[1]) < 1024 || atoi(argv[2]) > 65535 || atoi(argv[2]) < 1024)
+        error(1, 0, "Ports must be in range 1024-65535");
+
+    srand(time(0));
+
+    tcpFd = getaddrinfo_socket_bind_listen(SOCK_STREAM, argv[1]);
+    updFd = getaddrinfo_socket_bind_listen(SOCK_DGRAM, argv[2]);
     // set up ctrl+c handler for a graceful exit
     signal(SIGINT, ctrl_c);
     // prevent dead sockets from throwing pipe errors on write
@@ -34,14 +118,16 @@ int main(int argc, char **argv) {
 
     /****************************/
 
-    int epollDesc = epoll_create1(0);
+    epollDesc = epoll_create1(0);
 
     epoll_event ee;
     ee.events = POLL_IN;
     ee.data.fd = STDOUT_FILENO;
     epoll_ctl(epollDesc, EPOLL_CTL_ADD, STDIN_FILENO, &ee);
     ee.data.u32 = -1;
-    epoll_ctl(epollDesc, EPOLL_CTL_ADD, servFd, &ee);
+    epoll_ctl(epollDesc, EPOLL_CTL_ADD, tcpFd, &ee);
+    ee.data.u32 = -2;
+    epoll_ctl(epollDesc, EPOLL_CTL_ADD, updFd, &ee);
 
     // clientFds.insert(STDOUT_FILENO);
 
@@ -51,62 +137,18 @@ int main(int argc, char **argv) {
             continue;
 
         if(ee.data.u32 == -1){
-
-            char buffer[255];
-            // int count = read(servFd, buffer, 255);
-            // prepare placeholders for client address
-            sockaddr_storage clientAddr{0};
-            socklen_t clientAddrSize = sizeof(clientAddr);
-
-            // accept new connection
-            auto clientFd = accept(servFd, (sockaddr *)&clientAddr, &clientAddrSize);
-            if (clientFd == -1)
-                perror("accept failed");
-
-            // add client to all clients set
-            clientFds.insert(clientFd);
-
-            // tell who has connected
-            char host[NI_MAXHOST], port[NI_MAXSERV];
-            getnameinfo((sockaddr *)&clientAddr, clientAddrSize, host, NI_MAXHOST, port, NI_MAXSERV, 0);
-            printf("new connection from: %s:%s (fd: %d)\n", host, port, clientFd);
-
-            ee.data.fd = clientFd;
-            epoll_ctl(epollDesc, EPOLL_CTL_ADD, clientFd, &ee);
+            handleNewClient(ee);          
             continue;
-        }        
-
-        /****************************/
-
-        // read a message
-        int clientFd = ee.data.fd;
-
-        char buffer[255];
-        int count = read(clientFd, buffer, 255);
-
-        if (count < 1) {
-            printf("removing %d\n", clientFd);
-            clientFds.erase(clientFd);
-            close(clientFd);
+        }   
+        
+        if(ee.data.u32 == -2){
+            handleNewClient(ee);          
             continue;
-        } else {
-            if(clientFd != STDOUT_FILENO)
-                write(STDOUT_FILENO, buffer, count);
-            sendToAllBut(clientFd, buffer, count);
-        }
+        }   
 
-        /****************************/
+        tpcHandleMessageFromClient(ee);
     }
-
-    /****************************/
 }
-
-
-
-#include <cstdlib>
-#include <cstring>
-#include <errno.h>
-#include <string>
 
 void ctrl_c(int) {
     const char quitMsg[] = "[Server shutting down. Bye!]\n";
@@ -117,7 +159,7 @@ void ctrl_c(int) {
         // it will be discarded upon 'close'
         close(clientFd); 
     }
-    close(servFd);
+    close(tcpFd);
     printf("Closing server\n");
     exit(0);
 }
@@ -140,36 +182,43 @@ void sendToAllBut(int fd, const char *buffer, int count) {
     }
 }
 
-template <typename... Args> /* This mimics GNU 'error' function */
-void error(int status, int errnum, const char *format, Args... args) {
-    fprintf(stderr, (format + std::string(errnum ? ": %s\n" : "\n")).c_str(), args..., strerror(errnum));
-    if (status) exit(status);
-}
 
-int getaddrinfo_socket_bind_listen(int argc, const char *const *argv) {
-    if (argc != 2) error(1, 0, "Usage: %s <port>", argv[0]);
+
+// int getaddrinfo_socket_bind_listen(int argc, const char *const *argv) {
+int getaddrinfo_socket_bind_listen(int sockType, const char *port) {
+    
 
     // resolve port to a 'sockaddr*' for a TCP server
     addrinfo *res, hints{};
     hints.ai_flags = AI_PASSIVE;
-    hints.ai_socktype = SOCK_STREAM;
-    int rv = getaddrinfo(nullptr, argv[1], &hints, &res);
+    // hints.ai_socktype = SOCK_STREAM;
+    hints.ai_socktype = sockType;
+    int rv = getaddrinfo(nullptr, port, &hints, &res);
     if (rv) error(1, 0, "getaddrinfo: %s", gai_strerror(rv));
 
+    
     // create socket
-    int servFd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    if (servFd == -1) error(1, errno, "socket failed");
+    int sockFd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (sockFd == -1) error(1, errno, "socket failed");
+
+    char host[NI_MAXHOST], res_port[NI_MAXSERV];
+    getnameinfo(res->ai_addr, res->ai_addrlen, host, NI_MAXHOST, res_port, NI_MAXSERV, 0);
+    printf("Created socket: %s:%s (fd: %d)\n", host, res_port, sockFd);
 
     // try to set REUSEADDR
     const int one = 1;
-    setsockopt(servFd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    setsockopt(sockFd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
 
     // bind to address as resolved by getaddrinfo
-    if (bind(servFd, res->ai_addr, res->ai_addrlen))
+    if (bind(sockFd, res->ai_addr, res->ai_addrlen))
         error(1, errno, "bind failed");
 
     // enter listening mode
-    if (listen(servFd, 1))
-        error(1, errno, "listen failed");
-    return servFd;
+    if(sockType == SOCK_STREAM){
+        if (listen(sockFd, 1))
+            error(1, errno, "listen failed");
+    }
+    
+    
+    return sockFd;
 }

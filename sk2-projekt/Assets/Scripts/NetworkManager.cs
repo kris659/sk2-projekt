@@ -11,6 +11,7 @@ public class NetworkManager : MonoBehaviourSingleton<NetworkManager>
     public event Action<string> MessageReceived;
 
     private Socket _serverConnection;
+    private Socket _serverConnectionUDP;
     public async void ConnectToServer(string adress, int port)
     {
         IPHostEntry ipHost = Dns.GetHostEntry(Dns.GetHostName());
@@ -26,6 +27,11 @@ public class NetworkManager : MonoBehaviourSingleton<NetworkManager>
             SocketType.Stream,
             ProtocolType.Tcp);
 
+        _serverConnectionUDP = new(
+            ipEndPoint.AddressFamily,
+            SocketType.Dgram,
+            ProtocolType.Udp);
+
         MessageReceived?.Invoke("Trying to connect...");
         await _serverConnection.ConnectAsync(ipEndPoint);
         MessageReceived?.Invoke("Connected to server...");
@@ -40,7 +46,15 @@ public class NetworkManager : MonoBehaviourSingleton<NetworkManager>
         }
     }
 
-    public async void SendMessageToServer(string message)
+    public async void UDPSendMessageToServer(string message)
+    {
+        Debug.Log("Sending message...");
+        var messageBytes = Encoding.UTF8.GetBytes(message);
+        _ = await _serverConnection.SendToAsync(new ArraySegment<byte>(messageBytes), SocketFlags.None, _serverConnectionUDP.RemoteEndPoint);
+        Debug.Log($"Socket client sent message: \"{message}\"");
+    }
+
+    public async void TCPSendMessageToServer(string message)
     {
         Debug.Log("Sending message...");
         var messageBytes = Encoding.UTF8.GetBytes(message);

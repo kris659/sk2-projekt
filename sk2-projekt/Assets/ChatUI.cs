@@ -25,7 +25,7 @@ public class ChatUI : MonoBehaviour
     {
         if (message == string.Empty)
             return;
-        NetworkManager.Instance.SendMessageToServer(message);
+        NetworkManager.Instance.TCPSendMessageToServer(message);
         AddNewMessage("Ty: " + message);
     }
 }
