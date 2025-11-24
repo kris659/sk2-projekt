@@ -9,7 +9,7 @@ public class ChatUI : MonoBehaviour
 
     private void Start()
     {
-        NetworkManager.Instance.MessageReceived += AddNewMessage;
+        NetworkManager.Instance.TcpMessageReceived += AddNewMessage;
         _messageInputField.onSubmit.AddListener(Send);
         _messagePrefab.SetActive(false);
     }
@@ -25,7 +25,7 @@ public class ChatUI : MonoBehaviour
     {
         if (message == string.Empty)
             return;
-        NetworkManager.Instance.TCPSendMessageToServer(message);
+        NetworkManager.Instance.TcpSendMessageToServer(message);
         AddNewMessage("Ty: " + message);
     }
 }
