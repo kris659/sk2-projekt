@@ -5,23 +5,37 @@
 #include <unistd.h>
 #include <unordered_set>
 
-#include <poll.h>
 #include <sys/epoll.h>
-#include <thread>
-#include <mutex>
 
 #include <cstdlib>
 #include <cstring>
 #include <errno.h>
 #include <string>
+#include <map>
 
 // server socket
 int tcpFd;
 int updFd;
 int epollDesc;
 
+class PlayerData {      
+  public:           
+    int tcpFd;
+    int udpFd;
+    std::string name;
+
+    bool isAlive;
+    int health;
+
+    int positionX;
+    int positionY;
+    int rotation;
+};
+
 // client sockets
-std::unordered_set<int> clientFds;
+std::unordered_set<int> clientFds;  
+std::map<int, PlayerData> players;
+
 
 template <typename... Args> /* This mimics GNU 'error' function */
 void error(int status, int errnum, const char *format, Args... args) {
@@ -40,13 +54,11 @@ void ctrl_c(int);
 void sendToAllBut(int fd, const char *buffer, int count);
 
 int getRandomNumberInRange(int min, int max){
-    
     int randomNum = min + rand() % (max - min);
     return randomNum; 
 }
 
 void handleNewClient(epoll_event ee){
-    char buffer[255];
     // prepare placeholders for client address
     sockaddr_storage clientAddr{0};
     socklen_t clientAddrSize = sizeof(clientAddr);
@@ -62,13 +74,13 @@ void handleNewClient(epoll_event ee){
     // tell who has connected
     char host[NI_MAXHOST], port[NI_MAXSERV];
     getnameinfo((sockaddr *)&clientAddr, clientAddrSize, host, NI_MAXHOST, port, NI_MAXSERV, 0);
-    printf("new connection from: %s:%s (fd: %d)\n", host, port, clientFd);
+    printf("New connection from: %s:%s (fd: %d)\n", host, port, clientFd);
 
 
     ee.data.fd = clientFd;
     epoll_ctl(epollDesc, EPOLL_CTL_ADD, clientFd, &ee);
 
-    send(clientFd, "skip", 5, 0);
+    send(clientFd, "1235:100", 9, 0);
 }
 
 void tpcHandleMessageFromClient(epoll_event ee){
@@ -79,15 +91,15 @@ void tpcHandleMessageFromClient(epoll_event ee){
 
 
     if (count < 1) {
-        printf("removing %d\n", clientFd);
+        printf("Client disconnected: %d\n", clientFd);
         clientFds.erase(clientFd);
         close(clientFd);
-        continue;
-    } else {
-        if(clientFd != STDOUT_FILENO)
-            write(STDOUT_FILENO, buffer, count);
-        sendToAllBut(clientFd, buffer, count);
+        return;
     }
+    
+    if(clientFd != STDOUT_FILENO)
+        write(STDOUT_FILENO, buffer, count);
+    sendToAllBut(clientFd, buffer, count);
 }
 
 
@@ -97,7 +109,30 @@ void udpHandleMessageFromClient(epoll_event ee){
     char buffer[255];
     int count = read(updFd, buffer, 255);
 
-    printf(buffer);
+    printf("Received UDP message: %s\n", buffer);
+
+    const char *del = ":";
+    int positionX, positionY, rotation;
+
+    char *t = strtok(buffer, del);
+
+    if(t == nullptr)       
+        return;        
+    positionX = atoi(t);
+    t = strtok(nullptr, del);
+
+    if(t == nullptr)       
+        return;        
+    positionY = atoi(t);
+    t = strtok(nullptr, del);
+
+    if(t == nullptr)       
+        return;        
+    rotation = atoi(t);
+    t = strtok(nullptr, del);
+
+    
+    printf("Data: %d, %d, %d\n", positionX, positionY, rotation);
 }
 
 int main(int argc, char **argv) {
@@ -129,10 +164,8 @@ int main(int argc, char **argv) {
     ee.data.u32 = -2;
     epoll_ctl(epollDesc, EPOLL_CTL_ADD, updFd, &ee);
 
-    // clientFds.insert(STDOUT_FILENO);
 
     while (true) {
-        // sprawdzić czy nie trzeba więcej niż jeden??
         if(epoll_wait(epollDesc, &ee, 1, -1) < 0)
             continue;
 
@@ -142,9 +175,9 @@ int main(int argc, char **argv) {
         }   
         
         if(ee.data.u32 == -2){
-            handleNewClient(ee);          
+            udpHandleMessageFromClient(ee);          
             continue;
-        }   
+        } 
 
         tpcHandleMessageFromClient(ee);
     }
@@ -183,10 +216,8 @@ void sendToAllBut(int fd, const char *buffer, int count) {
 }
 
 
-
 // int getaddrinfo_socket_bind_listen(int argc, const char *const *argv) {
 int getaddrinfo_socket_bind_listen(int sockType, const char *port) {
-    
 
     // resolve port to a 'sockaddr*' for a TCP server
     addrinfo *res, hints{};
@@ -196,14 +227,22 @@ int getaddrinfo_socket_bind_listen(int sockType, const char *port) {
     int rv = getaddrinfo(nullptr, port, &hints, &res);
     if (rv) error(1, 0, "getaddrinfo: %s", gai_strerror(rv));
 
-    
     // create socket
     int sockFd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (sockFd == -1) error(1, errno, "socket failed");
 
-    char host[NI_MAXHOST], res_port[NI_MAXSERV];
-    getnameinfo(res->ai_addr, res->ai_addrlen, host, NI_MAXHOST, res_port, NI_MAXSERV, 0);
-    printf("Created socket: %s:%s (fd: %d)\n", host, res_port, sockFd);
+    char result_host[NI_MAXHOST], result_port[NI_MAXSERV];
+    getnameinfo(res->ai_addr, res->ai_addrlen, result_host, NI_MAXHOST, result_port, NI_MAXSERV, 0);
+
+
+    // TO DO - add error when result port is different than requested;
+
+    if(atoi(port) != atoi(result_port)){
+        printf("Failed creating socket at port: %s\n", port);
+        exit(1);
+    }
+
+    printf("Created socket: %s:%s (fd: %d)\n", result_host, result_port, sockFd);
 
     // try to set REUSEADDR
     const int one = 1;
@@ -218,7 +257,6 @@ int getaddrinfo_socket_bind_listen(int sockType, const char *port) {
         if (listen(sockFd, 1))
             error(1, errno, "listen failed");
     }
-    
     
     return sockFd;
 }

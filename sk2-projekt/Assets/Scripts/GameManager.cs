@@ -1,9 +1,11 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public class GameManager : MonoBehaviour
 {
     [SerializeField] private Transform _playersParent;
-    [SerializeField] private GameManager _playerPrefab;
+
+    private Dictionary<int, Player> _players = new Dictionary<int, Player>();
 
     private void Start()
     {
@@ -18,7 +20,6 @@ public class GameManager : MonoBehaviour
     private void OnConnectionEstablished()
     {
         NetworkManager.Instance.ConnectionEstablished -= OnConnectionEstablished;
-
     }
 
     private void OnPlayerJoined(int playerId)
@@ -26,7 +27,7 @@ public class GameManager : MonoBehaviour
 
     }
 
-    private void SpawnNewPlayer()
+    private void SpawnNewPlayer(int playerType, Vector2Int position)
     {
 
     }
