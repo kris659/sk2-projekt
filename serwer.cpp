@@ -36,6 +36,8 @@ class PlayerData {
     int positionX;
     int positionY;
     int rotation;
+
+    sockaddr_in playerAddr;
 };
 
 // client sockets
@@ -79,7 +81,9 @@ void handleNewClient(epoll_event ee){
     PlayerData playerData;
     playerData.playerId = playerId;
     playerData.tcpFd = clientFd;
-    playerData.udpFd = -1;
+    playerData.playerAddr.sin_addr = ((sockaddr_in *)&clientAddr)->sin_addr;
+    playerData.playerAddr.sin_port = nullptr;
+    playerData.playerAddr.sin_family = AF_INET;
     playerData.isAlive = true;
     playerData.health = 100;
     playerData.positionX = getRandomNumberInRange(0, 10);
@@ -111,7 +115,12 @@ void handlePlayerDisconnect(int clientFd){
 }
 
 void tpcHandleMessageFromClient(epoll_event ee){
+
     int clientFd = ee.data.fd;
+
+    //I;UDP_PORT;NAME~
+    //S;X;Y;ROTATION~
+    //C;ID;TEXT~
 
     char buffer[255];
     int count = read(clientFd, buffer, 255);
@@ -121,10 +130,60 @@ void tpcHandleMessageFromClient(epoll_event ee){
         handlePlayerDisconnect(clientFd);
         return;
     }
+
+    char messageType = buffer[0];
+    char del = ";";
+    int playerId;
+    char *t = strtok(buffer, del);
+    for (auto& i : players) {
+            if (i.second.tcpFd == clientFd) {
+                playerId = i.second.playerId;
+                break;
+            }
+        }
+
+    switch (messageType)
+    {
+    case 'I':
+
+        t = strtok(nullptr, del);
+        int udpPort = atoi(t);
+        t = strtok(nullptr, del);
+        std::string name = std::string(t);
+        players[playerId].playerAddr.sin_port = htons(udpPort);
+        players[playerId].name = name;
+        
+        break;
+    case 'S':
     
+        t = strtok(nullptr, del);
+        players[playerId].positionX = atoi(t);
+        t = strtok(nullptr, del);
+        players[playerId].positionY = atoi(t);
+        t = strtok(nullptr, del);
+        players[playerId].rotation = atoi(t);
+        break;
+    case 'C':
+
+        t = strtok(nullptr, del);
+        int id = atoi(t);
+        t = strtok(nullptr, del);
+        std::string text = std::string(t);
+
+        if(clientFd != STDOUT_FILENO)
+            write(STDOUT_FILENO, buffer, count);
+        sendToAllBut(clientFd, buffer, count);
+        break;
+    default:
+        
+        break;
+    }
+
     if(clientFd != STDOUT_FILENO)
-        write(STDOUT_FILENO, buffer, count);
+            write(STDOUT_FILENO, buffer, count);
     sendToAllBut(clientFd, buffer, count);
+    
+    
 }
 
 void udpHandleMessageFromClient(epoll_event ee){
