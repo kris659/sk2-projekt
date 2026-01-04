@@ -12,7 +12,6 @@ public class Player : MonoBehaviour
     public string PlayerName { get; private set; }
     public int Health { get; private set; }
 
-
     private Vector3 _currentMovementDirection;
 
     public void Init(PlayerTypeData playerTypeData, string playerName)

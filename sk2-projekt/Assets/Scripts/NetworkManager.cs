@@ -14,16 +14,13 @@ public class NetworkManager : MonoBehaviourSingleton<NetworkManager>
     public int PlayerID { get; private set; }   
     public bool IsConnectionEstablished { get; private set; }
 
-    private Socket _tcpServerConnection;
-    private Socket _udpServerConnection;
-    private EndPoint _udpRemoteEndpoint;
+    private Socket _tcpSocket;
     private UdpClient _udpClient;
+
+    private bool _isRunning = true;
 
     public async void ConnectToServer(string adress, int port)
     {
-        return;
-
-
         IPHostEntry ipHost = Dns.GetHostEntry(Dns.GetHostName());
         if (!IPAddress.TryParse(adress, out IPAddress ipAddr)){
             Debug.Log("Incorrect IP adress");
@@ -31,14 +28,14 @@ public class NetworkManager : MonoBehaviourSingleton<NetworkManager>
         }
         IPEndPoint ipEndPoint = new IPEndPoint(ipAddr, port);
 
-        _tcpServerConnection = new(
+        _tcpSocket = new(
             ipEndPoint.AddressFamily,
             SocketType.Stream,
             ProtocolType.Tcp);
 
-        await _tcpServerConnection.ConnectAsync(ipEndPoint);
+        await _tcpSocket.ConnectAsync(ipEndPoint);
 
-        string message = await ReceiveMessage(_tcpServerConnection);
+        string message = await TcpReceiveMessage();
         Debug.Log("Received TCP init message: " + message);
         string[] messageParts = message.Split(':');
 
@@ -52,128 +49,78 @@ public class NetworkManager : MonoBehaviourSingleton<NetworkManager>
         }
         PlayerID = playerID;
 
-        //Creates a UdpClient for reading incoming data.
-        UdpClient receivingUdpClient = new UdpClient(11000);
+        Debug.Log($"Player ID: {playerID}, udp port: {udpPort}");
 
-        //Creates an IPEndPoint to record the IP Address and port number of the sender.
-        // The IPEndPoint will allow you to read datagrams sent from any source.
-        IPEndPoint RemoteIpEndPoint = new IPEndPoint(IPAddress.Any, 0);
-        try {
+        _udpClient = new UdpClient();
+        _udpClient.Connect(adress, udpPort);
 
-            // Blocks until a message returns on this socket from a remote host.
-            Byte[] receiveBytes = receivingUdpClient.Receive(ref RemoteIpEndPoint);
+        TcpReceiveLoop();
+        UdpReceiveLoop();
 
-            string returnData = Encoding.ASCII.GetString(receiveBytes);
-
-            Console.WriteLine("This is the message you received " +
-                                      returnData.ToString());
-            Console.WriteLine("This message was sent from " +
-                                        RemoteIpEndPoint.Address.ToString() +
-                                        " on their port number " +
-                                        RemoteIpEndPoint.Port.ToString());
-        }
-        catch (Exception e) {
-            Console.WriteLine(e.ToString());
-        }
-
-
-        //_udpRemoteEndpoint = new IPEndPoint(((IPEndPoint)_tcpServerConnection.RemoteEndPoint).Address, udpPort);
-        //_udpServerConnection = new(
-        //    _udpRemoteEndpoint.AddressFamily,
-        //    SocketType.Dgram,
-        //    ProtocolType.Udp);
-
-
-        //await _udpServerConnection.ConnectAsync(_udpRemoteEndpoint);
-
-        //Debug.Log($"Player ID: {playerID}, udp port: {udpPort}");
-
-
-
-        //_udpClient = new UdpClient(0);
-        //Debug.Log("Local UDP endpoint: " + _udpClient.Client.LocalEndPoint);
-        //await _udpClient.ReceiveAsync();
-        Debug.Log("Received");
-
-
-        //_udpClient.Connect(ipAddr, udpPort);
-
-        //Debug.Log("Connection TCP and UDP");
-
-        //IsConnectionEstablished = true;
-        //ConnectionEstablished?.Invoke();
-
-        //Debug.Log("Local UDP endpoint: " + _udpClient.Client.LocalEndPoint);
-        //Debug.Log("Local UDP endpoint: " + _udpServerConnection.LocalEndPoint);
-        //Debug.Log($"Sending UDP to {ipAddr}:{udpPort}");
-
-        //ReceiveMessagesLoop(_tcpServerConnection, TcpMessageReceived);
-        //ReceiveMessagesLoop(_updServerConnection, UdpMessageReceived);
-        //StartUdpReceiveLoop();
+        IsConnectionEstablished = true;
+        ConnectionEstablished?.Invoke();
     }
 
-    private async void ReceiveMessagesLoop(Socket socket, Action<string> receivedEvent)
+    private async void UdpReceiveLoop()
     {
-        while (socket != null && socket.Connected) {
-            string message = await ReceiveMessage(socket);
+        Debug.Log("[UDP] Started read loop...");
+        while (_isRunning) {
+            try {
+                UdpReceiveResult result = await _udpClient.ReceiveAsync();
+                string msg = Encoding.UTF8.GetString(result.Buffer);
 
-            Debug.Log($"Recived: {message}");
-            receivedEvent?.Invoke(message);
+                Debug.Log("[UDP] Received: " + msg);
+            }
+            catch (SocketException ex) {
+                Debug.LogError("[UDP] Socket exception: " + ex.Message);
+            }
         }
     }
 
-    //private async void StartUdpReceiveLoop()
-    //{
-    //    while (true) {
-    //        var result = await _udpClient.ReceiveAsync();
-    //        string msg = Encoding.UTF8.GetString(result.Buffer);
-
-    //        Debug.Log($"UDP received: {msg}");
-    //        UdpMessageReceived?.Invoke(msg);
-    //    }
-    //}
+    private async void TcpReceiveLoop()
+    {
+        Debug.Log("[TCP] Started read loop...");
+        while (_isRunning) {
+            try {
+                string msg = await TcpReceiveMessage();
+                Debug.Log("[TCP] Received: " + msg);
+            }
+            catch (SocketException ex) {
+                Debug.LogError("[TCP] Socket exception: " + ex.Message);
+            }
+        }
+    }
 
     public async void UdpSendMessageToServer(string message)
     {
-        //var messageBytes = Encoding.UTF8.GetBytes(message);
-        //_ = await _updServerConnection.SendToAsync(new ArraySegment<byte>(messageBytes), SocketFlags.None, _udpRemoteEndpoint);
-        //Debug.Log($"Sent UDP message: \"{message}\"");
+        Debug.Log($"[UDP] Seding message: {message}");
 
-        //UdpClient udpClient = new UdpClient();
-        //Byte[] sendBytes = Encoding.ASCII.GetBytes("Is anybody there");
-
-        //Debug.Log("Sending message...");
-        //Debug.Log($"Local UDP port: {((IPEndPoint)_udpClient.Client.LocalEndPoint).Port}");
-        //Debug.Log($"Remote UDP port: {((IPEndPoint)_udpClient.Client.RemoteEndPoint).Port}");
-
-        
-        //_ = await _udpClient.SendAsync(sendBytes, sendBytes.Length);
-
-        //Debug.Log("Sent");
+        byte[] data = Encoding.UTF8.GetBytes(message);
+        await _udpClient.SendAsync(data, data.Length);
+        Debug.Log($"[UDP] Sent message: {message}");
     }
 
     public async void TcpSendMessageToServer(string message)
     {
-        Debug.Log("Sending message...");
+        Debug.Log("[TCP] Sending message...");
         var messageBytes = Encoding.UTF8.GetBytes(message);
-        _ = await _tcpServerConnection.SendAsync(messageBytes, SocketFlags.None);
-        Debug.Log($"Sent TCP message: \"{message}\"");
+        _ = await _tcpSocket.SendAsync(messageBytes, SocketFlags.None);
+        Debug.Log($"[TCP] Sent message: \"{message}\"");
     }
 
-    private async Task<string> ReceiveMessage(Socket socket)
+    private async Task<string> TcpReceiveMessage()
     {
         var buffer = new byte[1_024];
-        var received = await socket.ReceiveAsync(buffer, SocketFlags.None);
+        var received = await _tcpSocket.ReceiveAsync(buffer, SocketFlags.None);
         return Encoding.UTF8.GetString(buffer, 0, received);
     }
 
-
-    private void OnDestroy()
+    private void OnApplicationQuit()
     {
-        if (_tcpServerConnection != null) {
-            if(_tcpServerConnection.Connected)
-                _tcpServerConnection.Shutdown(SocketShutdown.Both);
-            _tcpServerConnection.Dispose();
-        }
+        _isRunning = false;
+        _udpClient?.Close();
+        _tcpSocket?.Shutdown(SocketShutdown.Both);
+        _tcpSocket?.Close();
+        _tcpSocket?.Dispose();
     }
 }

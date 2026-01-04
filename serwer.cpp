@@ -14,12 +14,18 @@
 #include <map>
 
 // server socket
+
+int tcpPort;
+int udpPort;
+int nextPlayerID = 0;
+
 int tcpFd;
-int updFd;
+int udpFd;  
 int epollDesc;
 
 class PlayerData {      
-  public:           
+  public:
+    int playerId;
     int tcpFd;
     int udpFd;
     std::string name;
@@ -33,9 +39,8 @@ class PlayerData {
 };
 
 // client sockets
-std::unordered_set<int> clientFds;  
+// std::unordered_set<int> clientFds;
 std::map<int, PlayerData> players;
-
 
 template <typename... Args> /* This mimics GNU 'error' function */
 void error(int status, int errnum, const char *format, Args... args) {
@@ -69,18 +74,40 @@ void handleNewClient(epoll_event ee){
         perror("accept failed");
 
     // add client to all clients set
-    clientFds.insert(clientFd);
+    int playerId = nextPlayerID++;
+
+    PlayerData playerData;
+    playerData.playerId = playerId;
+    playerData.tcpFd = clientFd;
+    playerData.udpFd = -1;
+    playerData.isAlive = true;
+    playerData.health = 100;
+    playerData.positionX = getRandomNumberInRange(0, 10);
+    playerData.positionY = getRandomNumberInRange(0, 10);
+    players[playerId] = playerData;
 
     // tell who has connected
     char host[NI_MAXHOST], port[NI_MAXSERV];
     getnameinfo((sockaddr *)&clientAddr, clientAddrSize, host, NI_MAXHOST, port, NI_MAXSERV, 0);
     printf("New connection from: %s:%s (fd: %d)\n", host, port, clientFd);
 
-
     ee.data.fd = clientFd;
     epoll_ctl(epollDesc, EPOLL_CTL_ADD, clientFd, &ee);
 
-    send(clientFd, "1235:100", 9, 0);
+    std::string s = std::to_string(udpPort) + ":" + std::to_string(playerId);
+    send(clientFd, s.c_str(), s.size(), 0);
+}
+
+void handlePlayerDisconnect(int clientFd){
+    for (const auto& i : players) {
+        if (i.second.tcpFd == clientFd) {
+            players.erase(i.second.playerId);
+            printf("Client Id: %d, tcpFd: %d disconnected\n", i.second.playerId, clientFd);
+            break;
+        }
+    }
+    epoll_ctl(epollDesc, EPOLL_CTL_DEL, clientFd, nullptr);
+    close(clientFd);
 }
 
 void tpcHandleMessageFromClient(epoll_event ee){
@@ -91,9 +118,7 @@ void tpcHandleMessageFromClient(epoll_event ee){
 
 
     if (count < 1) {
-        printf("Client disconnected: %d\n", clientFd);
-        clientFds.erase(clientFd);
-        close(clientFd);
+        handlePlayerDisconnect(clientFd);
         return;
     }
     
@@ -102,13 +127,9 @@ void tpcHandleMessageFromClient(epoll_event ee){
     sendToAllBut(clientFd, buffer, count);
 }
 
-
 void udpHandleMessageFromClient(epoll_event ee){
-    int clientFd = ee.data.fd;
-
     char buffer[255];
-    int count = read(updFd, buffer, 255);
-
+    int count = read(udpFd, buffer, 255);
     printf("Received UDP message: %s\n", buffer);
 
     const char *del = ":";
@@ -131,21 +152,24 @@ void udpHandleMessageFromClient(epoll_event ee){
     rotation = atoi(t);
     t = strtok(nullptr, del);
 
-    
     printf("Data: %d, %d, %d\n", positionX, positionY, rotation);
 }
 
 int main(int argc, char **argv) {
     if (argc != 3) error(1, 0, "Usage: %s <tcp-port> <udp-port>", argv[0]);
-    if (atoi(argv[1]) == atoi(argv[2]))
+
+    tcpPort = atoi(argv[1]);
+    udpPort = atoi(argv[2]);
+
+    if (tcpPort == udpPort)
         error(1, 0, "TCP and UDP ports must differ");
-    if (atoi(argv[1]) > 65535 || atoi(argv[1]) < 1024 || atoi(argv[2]) > 65535 || atoi(argv[2]) < 1024)
+    if (tcpPort > 65535 || tcpPort < 1024 || udpPort > 65535 || udpPort < 1024)
         error(1, 0, "Ports must be in range 1024-65535");
 
     srand(time(0));
 
     tcpFd = getaddrinfo_socket_bind_listen(SOCK_STREAM, argv[1]);
-    updFd = getaddrinfo_socket_bind_listen(SOCK_DGRAM, argv[2]);
+    udpFd = getaddrinfo_socket_bind_listen(SOCK_DGRAM, argv[2]);
     // set up ctrl+c handler for a graceful exit
     signal(SIGINT, ctrl_c);
     // prevent dead sockets from throwing pipe errors on write
@@ -162,8 +186,7 @@ int main(int argc, char **argv) {
     ee.data.u32 = -1;
     epoll_ctl(epollDesc, EPOLL_CTL_ADD, tcpFd, &ee);
     ee.data.u32 = -2;
-    epoll_ctl(epollDesc, EPOLL_CTL_ADD, updFd, &ee);
-
+    epoll_ctl(epollDesc, EPOLL_CTL_ADD, udpFd, &ee);
 
     while (true) {
         if(epoll_wait(epollDesc, &ee, 1, -1) < 0)
@@ -186,11 +209,12 @@ int main(int argc, char **argv) {
 void ctrl_c(int) {
     const char quitMsg[] = "[Server shutting down. Bye!]\n";
     sendToAllBut(-1, quitMsg, sizeof(quitMsg));
-    for (int clientFd : clientFds) {
-        shutdown(clientFd, SHUT_RDWR);
+
+    for (const auto& i : players) {
+        shutdown(i.second.tcpFd, SHUT_RDWR);
         // note that if the message cannot be sent out immediately,
         // it will be discarded upon 'close'
-        close(clientFd); 
+        close(i.second.tcpFd); 
     }
     close(tcpFd);
     printf("Closing server\n");
@@ -198,20 +222,23 @@ void ctrl_c(int) {
 }
 
 void sendToAllBut(int fd, const char *buffer, int count) {
-    decltype(clientFds) bad;
-    for (int clientFd : clientFds) {
-        if (clientFd == fd)
+    std::unordered_set<int> bad;
+
+    for (const auto& i : players) {
+        if (i.second.tcpFd == fd)
             continue;
-        if (count != send(clientFd, buffer, count, MSG_DONTWAIT))
-            bad.insert(clientFd);
+        if (count != send(i.second.tcpFd, buffer, count, MSG_DONTWAIT))
+            bad.insert(i.second.tcpFd);    
     }
+
     // 'read' handles errors on a client socket, but it won't do a thing when
     // the client has gone away without notice. Hwnce, if the system send
     // buffer overflows, then the 'shutdown' below triggers 'read' to fail.
     for (int clientFd : bad) {
-        printf("write failed on %d\n", clientFd);
-        clientFds.erase(clientFd);
-        shutdown(clientFd, SHUT_RDWR);
+        printf("Write failed on %d\n", clientFd);
+        handlePlayerDisconnect(clientFd);
+        // clientFds.erase(clientFd);
+        // shutdown(clientFd, SHUT_RDWR);
     }
 }
 

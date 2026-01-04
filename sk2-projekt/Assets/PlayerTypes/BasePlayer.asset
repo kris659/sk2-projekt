@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 87c7fc15c3ca61e438774cb6c87189bf, type: 3}
   m_Name: BasePlayer
   m_EditorClassIdentifier: 
-  VisualPrefab: {fileID: 0}
+  VisualPrefab: {fileID: 8746990519031152576, guid: 9cba7d2698ca82e4492db9a88537d585, type: 3}
   StartingHealth: 100
   MovementSpeed: 5
   FireRate: 1
