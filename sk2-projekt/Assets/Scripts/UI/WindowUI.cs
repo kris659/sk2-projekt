@@ -15,7 +15,7 @@ public class WindowUI : MonoBehaviour
         _content.SetActive(true);
     }
 
-    public void Close()
+    public virtual void Close()
     {
         _content.SetActive(false);
     }

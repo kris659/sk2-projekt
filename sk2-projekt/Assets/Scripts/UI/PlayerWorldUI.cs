@@ -22,6 +22,7 @@ public class PlayerWorldUI : MonoBehaviour
 
         _player.HealthUpdated += OnPlayerHealthUpdated;
         _player.Initialized += OnPlayerHealthUpdated;
+        _player.Initialized += UpdatePlayerName;
 
         if (_player.IsInitialized) {
             OnPlayerHealthUpdated();
@@ -31,7 +32,7 @@ public class PlayerWorldUI : MonoBehaviour
 
     private void OnPlayerHealthUpdated()
     {
-        float value = _player.Health / _player.PlayerTypeData.StartingHealth;
+        float value = _player.Health / (float)_player.PlayerTypeData.StartingHealth;
         value = Mathf.Clamp01(value);
         _healthBar.fillAmount = value;
     }

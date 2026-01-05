@@ -201,6 +201,8 @@ void tpcHandleMessageFromClient(epoll_event ee){
                 players[playerId].playerAddr.sin_port = htons(playerUdpPort);
                 players[playerId].name = name;
                 players[playerId].type = type;
+                players[playerId].isAlive = true;
+                players[playerId].health = 100;
 
 
                 std::string s = "I;" + std::to_string(players[playerId].positionX) + ";" + std::to_string(players[playerId].positionY) + "~";
@@ -229,6 +231,11 @@ void tpcHandleMessageFromClient(epoll_event ee){
                 int positionY = atoi(t);
                 t = strtok(nullptr, del);
                 int rotation = atoi(t);
+
+                if(!players[playerId].isAlive){
+                    std::cout << "Player " << playerId << " is dead, cannot shoot" << std::endl;
+                    break;
+                }
 
                 BulletData bulletData;
                 bulletData.bulletId = nextBulletID++;
@@ -321,6 +328,8 @@ void udpHandleMultipleMessagesFromClient(epoll_event ee){
 void udpSendMessageToPlayers(){
     std::string buffer = "M;";
     for(const auto& i : players){
+        if(!i.second.isAlive)
+            continue;
         buffer = buffer + std::to_string(i.second.playerId) + ";" + std::to_string(i.second.positionX) + ";" + std::to_string(i.second.positionY) + ";" + std::to_string(i.second.rotation) + "!";
     }
     buffer += "~";
@@ -328,7 +337,7 @@ void udpSendMessageToPlayers(){
     //std::cout << "UDP Update: " << buffer << std::endl;
     for (const auto& i : players) {
         sendto(udpFd, buffer.c_str(), count, 0, (sockaddr *)&i.second.playerAddr, sizeof(i.second.playerAddr));
-        std::cout << "UDP Update: "<< i.first << ": " << buffer << std::endl;
+        //std::cout << "UDP Update: "<< i.first << ": " << buffer << std::endl;
     }
 }
 
@@ -371,6 +380,7 @@ void bulletsUpdate() {
 
                 // Info o trafieniu
                 std::string hitmessage = "H;" + std::to_string(player.playerId) + ";" + 
+                                         std::to_string(bulletData.bulletId) + ";" + 
                                          std::to_string(players[player.playerId].health) + ";" + 
                                          std::to_string(players[player.playerId].isAlive) + "~";
                 tcpSendMessageToPlayers(hitmessage);
@@ -464,7 +474,7 @@ int main(int argc, char **argv) {
     ee.data.u32 = -2;
     epoll_ctl(epollDesc, EPOLL_CTL_ADD, udpFd, &ee);
 
-    int cooldown = 1000 / 64;
+    int cooldown = 1000 / 32;
     auto lastTimeSendUdp = std::chrono::high_resolution_clock::now();
 
     while (true) {

@@ -31,5 +31,6 @@ public class PlayerTypeSelectionUI : WindowUI
     private void OnDisconnectButtonPressed()
     {
         Debug.Log("Disconnect button pressed");
+        NetworkManager.Instance.Disconect();
     }
 }

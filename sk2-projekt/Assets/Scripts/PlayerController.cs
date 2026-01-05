@@ -41,7 +41,7 @@ public class PlayerController : MonoBehaviour
 
     private void Shoot()
     {
-        if (!NetworkManager.Instance.IsConnectionEstablished)
+        if (!NetworkManager.Instance.IsConnected)
             return;
         Vector2Int position = transform.position.ToServer();
         NetworkManager.Instance.TcpSendMessageToServer(string.Format("S;{0};{1};{2};", position.x, position.y, Mathf.RoundToInt(_player.Visual.transform.eulerAngles.z)));
@@ -49,7 +49,7 @@ public class PlayerController : MonoBehaviour
 
     private void SendTransformData()
     {
-        if (!NetworkManager.Instance.IsConnectionEstablished)
+        if (!NetworkManager.Instance.IsConnected)
             return;
 
         Vector2Int position = transform.position.ToServer();

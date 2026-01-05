@@ -34,7 +34,6 @@ public class LobbyUI : WindowUI
         _nameInputField.text.Replace(';', '.');
 
         NetworkManager.Instance.ConnectToServer(_adressInputField.text, port, _nameInputField.text);
-        UIManager.Instance.PlayerTypeSelectionUI.Open();
         Close();
     }
 

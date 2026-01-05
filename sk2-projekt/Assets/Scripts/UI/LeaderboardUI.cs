@@ -1,9 +1,8 @@
 using UnityEngine;
 
-public class LeaderboardUI : MonoBehaviour
+public class LeaderboardUI : WindowUI
 {
-    [SerializeField] private Transform leaderboardListParent;
-
+    [SerializeField] private Transform _leaderboardListParent;
 
     private void UpdateLeaderboard()
     {

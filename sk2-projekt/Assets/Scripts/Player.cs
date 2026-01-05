@@ -29,6 +29,7 @@ public class Player : MonoBehaviour
         IsInitialized = true;
         Initialized?.Invoke();
         HealthUpdated?.Invoke();
+        Debug.Log("Initialized");
     }
 
     private void Update()
@@ -43,9 +44,9 @@ public class Player : MonoBehaviour
         transform.SetPositionAndRotation(position, Quaternion.Euler(new Vector3(0,0,rotation)));
     }
 
-    public void ReceiveDamage(int damage)
+    public void SetHealth(int health)
     {
-        Health -= damage;
+        Health = health;
         HealthUpdated?.Invoke();
     }
 }

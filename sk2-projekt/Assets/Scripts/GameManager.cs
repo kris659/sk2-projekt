@@ -3,33 +3,47 @@ using UnityEngine;
 
 public class GameManager : MonoBehaviourSingleton<GameManager>
 {
-    public enum SendMessageType
-    {
-        LocalPlayerInit,
-        PlayerData,
-        BulletSpawn,
-        BulletHit
-    }
-
     [SerializeField] private List<PlayerTypeData> _playerTypes;
     [SerializeField] private GameObject _playerPrefab;
     [SerializeField] private GameObject _bulletPrefab;
     [SerializeField] private Transform _playersParent;
 
-    private Dictionary<int, Player> _players = new Dictionary<int, Player>();
+    private Dictionary<int, Player> _players = new ();
+    private Dictionary<int, Bullet> _bullets = new ();
     private Player _localPlayer;
 
     private void Start()
     {
-        NetworkManager.Instance.ConnectionEstablished += OnConnectionEstablished;
+        NetworkManager.Instance.Disconnected += Disconected;
+        NetworkManager.Instance.TcpMessageReceived += TcpMessageReceived;
+        NetworkManager.Instance.UdpMessageReceived += UdpMessageReceived;
         UIManager.Instance.LobbyUI.Open();
     }
 
-    private void OnConnectionEstablished()
+    private void OnDestroy()
     {
-        NetworkManager.Instance.ConnectionEstablished -= OnConnectionEstablished;
-        NetworkManager.Instance.TcpMessageReceived += TcpMessageReceived;
-        NetworkManager.Instance.UdpMessageReceived += UdpMessageReceived;
+        if(NetworkManager.Instance == null)
+            return;
+        NetworkManager.Instance.Disconnected -= Disconected;
+        NetworkManager.Instance.TcpMessageReceived -= TcpMessageReceived;
+        NetworkManager.Instance.UdpMessageReceived -= UdpMessageReceived;
+    }
+
+    private void Disconected()
+    {
+        foreach(var player in _players.Values) {
+            if(player == null)
+                continue;
+            Destroy(player.gameObject);
+        }
+        foreach(var bullet in _bullets.Values) {
+            if (bullet == null)
+                continue;            
+            Destroy(bullet.gameObject);
+        }
+        _players.Clear();
+        _bullets.Clear();
+        _localPlayer = null;
     }
 
     public void SpawnLocalPlayer(int playerTypeIndex)
@@ -63,6 +77,85 @@ public class GameManager : MonoBehaviourSingleton<GameManager>
             case "S":
                 SpawnBullet(trimmedMessage);
                 break;
+            case "H":
+                PlayerHit(trimmedMessage);
+                break;
+            case "E":
+                RemoveBullet(trimmedMessage);
+                break;
+        }
+    }
+
+    private void RemoveBullet(string message)
+    {
+        string[] parts = message.Split(";");
+        if (parts.Length > 0 && int.TryParse(parts[0], out int bulletId)) {
+            if(_bullets.TryGetValue(bulletId, out Bullet bullet)) {
+                Destroy(bullet.gameObject);
+                _bullets.Remove(bulletId);
+            }
+        }
+    }
+
+    private void PlayerHit(string message)
+    {
+        string[] parts = message.Split(";");
+        if (parts.Length < 3) {
+            Debug.LogWarning("Incorrect player hit message format! " + string.Join(',', parts));
+            return;
+        }
+        if (!int.TryParse(parts[0], out int playerId)) {
+            Debug.LogWarning("[GM] Failed to parse player ID: " + parts[0]);
+            return;
+        }
+        if (!int.TryParse(parts[1], out int bulletId)) {
+            Debug.LogWarning("[GM] Failed to parse bullet ID: " + parts[1]);
+            return;
+        }
+        if (!int.TryParse(parts[2], out int health)) {
+            Debug.LogWarning("[GM] Failed to parse health: " + parts[2]);
+            return;
+        }
+        if (!int.TryParse(parts[3], out int isAliveInt)) {
+            Debug.LogWarning("[GM] Failed to parse isAlive: " + parts[3]);
+            return;
+        }
+
+        if(!_bullets.ContainsKey(bulletId)) {
+            Debug.LogWarning($"Bullet with ID:{bulletId} doesn't exist");
+            return;
+        }
+
+        Bullet bullet = _bullets[bulletId];
+        Destroy(bullet.gameObject);
+
+        if (!_players.ContainsKey(playerId)) {
+            Debug.LogWarning($"Player with ID:{playerId} doesn't exist");
+            return;
+        }
+
+        Player player = _players[playerId];
+        player.SetHealth(health);
+
+        if (isAliveInt == 0) {
+            PlayerDeath(playerId);
+            return;
+        }
+    }
+
+    private void PlayerDeath(int playerId)
+    {
+        if(!_players.ContainsKey(playerId)) {
+            Debug.LogWarning($"Player with ID:{playerId} doesn't exist");
+            return;
+        }
+        Player player = _players[playerId];
+        Destroy(player.gameObject);
+
+        if(playerId == NetworkManager.Instance.PlayerID) {
+            UIManager.Instance.InfoUI.Open("You died", "Play again", UIManager.Instance.PlayerTypeSelectionUI.Open);
+        } else {
+            _players.Remove(playerId);
         }
     }
 
@@ -97,6 +190,7 @@ public class GameManager : MonoBehaviourSingleton<GameManager>
 
         GameObject bulletObject = Instantiate(_bulletPrefab);
         Bullet bullet = bulletObject.GetComponent<Bullet>();
+        _bullets[bulletId] = bullet;
 
         Vector2Int position = new Vector2Int(positionX, positionY);
         bullet.Init(position.ToLocal(), rotation, bulletId);
