@@ -7,6 +7,7 @@ public class Player : MonoBehaviour
     public event Action Initialized;
 
     public bool IsInitialized { get; private set; }
+    public bool IsLocalPlayer { get; private set; }
 
     public PlayerTypeData PlayerTypeData { get; private set; }
     public string PlayerName { get; private set; }
@@ -14,12 +15,18 @@ public class Player : MonoBehaviour
 
     private Vector3 _currentMovementDirection;
 
+    public GameObject Visual { get; private set; }
+
     public void Init(PlayerTypeData playerTypeData, string playerName)
     {
         PlayerTypeData = playerTypeData;
         Health = playerTypeData.StartingHealth;
         PlayerName = playerName;
 
+        Visual = Instantiate(playerTypeData.VisualPrefab, transform);
+        Visual.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+
+        IsInitialized = true;
         Initialized?.Invoke();
         HealthUpdated?.Invoke();
     }
@@ -31,7 +38,7 @@ public class Player : MonoBehaviour
         transform.position += PlayerTypeData.MovementSpeed * Time.deltaTime * _currentMovementDirection;
     }
 
-    public void SetPositionAndRotation(Vector3 position, float rotation, Vector3 currentMovementDirection)
+    public void SetPositionAndRotation(Vector3 position, float rotation)
     {
         transform.SetPositionAndRotation(position, Quaternion.Euler(new Vector3(0,0,rotation)));
     }

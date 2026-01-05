@@ -1,5 +1,5 @@
-using System.Globalization;
 using UnityEngine;
+using UnityEngine.UIElements;
 
 [RequireComponent (typeof(Player))]
 public class PlayerController : MonoBehaviour
@@ -12,10 +12,6 @@ public class PlayerController : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.Space)){
-            TestSendUDPData();
-        }
-
         if (!_player.IsInitialized)
             return;
 
@@ -23,6 +19,8 @@ public class PlayerController : MonoBehaviour
 
         if (Input.GetMouseButtonDown(0))
             Shoot();
+
+        SendTransformData();
     }
 
     private void Move()
@@ -38,20 +36,23 @@ public class PlayerController : MonoBehaviour
         Vector3 mousePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
 
         Vector2 direction = mousePosition - transform.position;
-        transform.rotation = Quaternion.FromToRotation(Vector3.right, direction);
+        _player.Visual.transform.rotation = Quaternion.FromToRotation(Vector3.right, direction);
     }
 
     private void Shoot()
     {
-
+        if (!NetworkManager.Instance.IsConnectionEstablished)
+            return;
+        Vector2Int position = transform.position.ToServer();
+        NetworkManager.Instance.TcpSendMessageToServer(string.Format("S;{0};{1};{2};", position.x, position.y, Mathf.RoundToInt(_player.Visual.transform.eulerAngles.z)));
     }
 
-    private void TestSendUDPData()
+    private void SendTransformData()
     {
         if (!NetworkManager.Instance.IsConnectionEstablished)
             return;
 
         Vector2Int position = transform.position.ToServer();
-        NetworkManager.Instance.UdpSendMessageToServer(string.Format("{0}:{1}:{2}", position.x, position.y, Mathf.RoundToInt(transform.eulerAngles.z)));
+        NetworkManager.Instance.UdpSendMessageToServer(string.Format("{0};{1};{2};{3};", NetworkManager.Instance.PlayerID, position.x, position.y, Mathf.RoundToInt(_player.Visual.transform.eulerAngles.z)));
     }
 }

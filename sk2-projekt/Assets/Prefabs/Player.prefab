@@ -10,7 +10,6 @@ GameObject:
   m_Component:
   - component: {fileID: 615801259311287862}
   - component: {fileID: 5784613456704867661}
-  - component: {fileID: 4676090111075948553}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -31,7 +30,6 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 1521251360936140026}
   - {fileID: 8844291043109250322}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -47,19 +45,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e593d850f6cc7e94fb0132e7cc782547, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
---- !u!114 &4676090111075948553
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2620728765045908974}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9e29dad053299d247bba449a3502d1f9, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _movementSpeed: 5
 --- !u!1001 &6593434516007714268
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -161,66 +146,4 @@ PrefabInstance:
 RectTransform:
   m_CorrespondingSourceObject: {fileID: 2395262005582911694, guid: d3aaaa641a666ff43a80bb6b7c7e60a2, type: 3}
   m_PrefabInstance: {fileID: 6593434516007714268}
-  m_PrefabAsset: {fileID: 0}
---- !u!1001 &8262886414168351492
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 615801259311287862}
-    m_Modifications:
-    - target: {fileID: 7473505224297709566, guid: 9cba7d2698ca82e4492db9a88537d585, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7473505224297709566, guid: 9cba7d2698ca82e4492db9a88537d585, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7473505224297709566, guid: 9cba7d2698ca82e4492db9a88537d585, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7473505224297709566, guid: 9cba7d2698ca82e4492db9a88537d585, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 7473505224297709566, guid: 9cba7d2698ca82e4492db9a88537d585, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7473505224297709566, guid: 9cba7d2698ca82e4492db9a88537d585, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7473505224297709566, guid: 9cba7d2698ca82e4492db9a88537d585, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7473505224297709566, guid: 9cba7d2698ca82e4492db9a88537d585, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7473505224297709566, guid: 9cba7d2698ca82e4492db9a88537d585, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7473505224297709566, guid: 9cba7d2698ca82e4492db9a88537d585, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 8746990519031152576, guid: 9cba7d2698ca82e4492db9a88537d585, type: 3}
-      propertyPath: m_Name
-      value: BasePlayerVisual
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 9cba7d2698ca82e4492db9a88537d585, type: 3}
---- !u!4 &1521251360936140026 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 7473505224297709566, guid: 9cba7d2698ca82e4492db9a88537d585, type: 3}
-  m_PrefabInstance: {fileID: 8262886414168351492}
   m_PrefabAsset: {fileID: 0}
