@@ -5,9 +5,11 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.UI;
 
 public class NetworkManager : MonoBehaviourSingleton<NetworkManager>
 {
+    public event Action Connected;
     public event Action Disconnected;
     public event Action<string> TcpMessageReceived;
     public event Action<string> UdpMessageReceived;
@@ -16,10 +18,33 @@ public class NetworkManager : MonoBehaviourSingleton<NetworkManager>
     public bool IsConnected { get; private set; }
     public int UdpLocalPort { get; private set; }
 
+    [SerializeField] private Button _disconnectButton;
+
     private Socket _tcpSocket;
     private UdpClient _udpClient;
 
     private CancellationTokenSource _connectCancelToken;
+
+    private const int TIMEOUT_SECONDS = 3;
+    private float _lastReceiveTime;
+
+    private void Start()
+    {
+        _disconnectButton.onClick.AddListener(() => Disconect());
+
+        TcpMessageReceived += (_) => _lastReceiveTime = Time.time;
+        UdpMessageReceived += (_) => _lastReceiveTime = Time.time;
+    }
+
+    private void Update()
+    {
+        if (IsConnected && Time.time - _lastReceiveTime > TIMEOUT_SECONDS) {
+            Debug.Log("Connection timed out due to inactivity.");
+            Disconect();
+            if(UIManager.Instance != null && UIManager.Instance.InfoUI != null)
+                UIManager.Instance.InfoUI.Open("Connection timed out.", "OK", null);
+        }
+    }
 
     public async void ConnectToServer(string adress, int port, string playerName)
     {
@@ -37,7 +62,6 @@ public class NetworkManager : MonoBehaviourSingleton<NetworkManager>
 
         _connectCancelToken = new CancellationTokenSource(); 
         var userToken = _connectCancelToken.Token;
-
 
         var connectTask = _tcpSocket.ConnectAsync(ipEndPoint);
         var timeoutTask = Task.Delay(TimeSpan.FromSeconds(5));
@@ -76,8 +100,6 @@ public class NetworkManager : MonoBehaviourSingleton<NetworkManager>
         UIManager.Instance.LobbyUI.Close();
         UIManager.Instance.PlayerTypeSelectionUI.Open();
 
-        IsConnected = true;
-
         Debug.Log("Connected to server via TCP");
         string message = await TcpReceiveMessage();
         Debug.Log("Received TCP init message: " + message);
@@ -99,12 +121,16 @@ public class NetworkManager : MonoBehaviourSingleton<NetworkManager>
         _udpClient = new UdpClient();
         _udpClient.Connect(adress, udpPort);
 
-        TcpReceiveLoop();
-        UdpReceiveLoop();
-
         IPEndPoint localEndPoint = (IPEndPoint)_udpClient.Client.LocalEndPoint;
         UdpLocalPort = localEndPoint.Port;
 
+        _lastReceiveTime = Time.time;
+        IsConnected = true;
+
+        TcpReceiveLoop();
+        UdpReceiveLoop();
+        Connected?.Invoke();
+        _disconnectButton.gameObject.SetActive(true);
     }
 
     private async void UdpReceiveLoop()
@@ -118,8 +144,9 @@ public class NetworkManager : MonoBehaviourSingleton<NetworkManager>
                 //Debug.Log("[UDP] Received: " + msg);
                 UdpMessageReceived?.Invoke(msg);
             }
-            catch (SocketException ex) {
-                Debug.LogError("[UDP] Socket exception: " + ex.Message);
+            catch (Exception ex) {
+                if(IsConnected)
+                    Debug.LogError("[UDP] Read exception: " + ex.Message);
             }
         }
     }
@@ -186,6 +213,8 @@ public class NetworkManager : MonoBehaviourSingleton<NetworkManager>
 
     public void Disconect(bool openUI = true)
     {
+        if(_disconnectButton != null)
+            _disconnectButton.gameObject.SetActive(false);
         Debug.Log("Disconnecting from server...");
         Disconnected?.Invoke();
         IsConnected = false;

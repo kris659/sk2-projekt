@@ -7,7 +7,7 @@ public class Player : MonoBehaviour
     public event Action Initialized;
 
     public bool IsInitialized { get; private set; }
-    public bool IsLocalPlayer { get; private set; }
+    public int Score { get; private set; }
 
     public PlayerTypeData PlayerTypeData { get; private set; }
     public string PlayerName { get; private set; }
@@ -29,7 +29,6 @@ public class Player : MonoBehaviour
         IsInitialized = true;
         Initialized?.Invoke();
         HealthUpdated?.Invoke();
-        Debug.Log("Initialized");
     }
 
     private void Update()
@@ -41,12 +40,18 @@ public class Player : MonoBehaviour
 
     public void SetPositionAndRotation(Vector3 position, float rotation)
     {
-        transform.SetPositionAndRotation(position, Quaternion.Euler(new Vector3(0,0,rotation)));
+        transform.position = position;
+        Visual.transform.rotation = Quaternion.Euler(new Vector3(0,0,rotation));
     }
 
     public void SetHealth(int health)
     {
         Health = health;
         HealthUpdated?.Invoke();
+    }
+
+    public void SetScore(int score)
+    {
+        Score = score;
     }
 }

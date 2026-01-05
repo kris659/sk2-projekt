@@ -10,12 +10,12 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 87c7fc15c3ca61e438774cb6c87189bf, type: 3}
-  m_Name: BasePlayer
+  m_Name: SniperPlayer
   m_EditorClassIdentifier: 
-  VisualPrefab: {fileID: 8746990519031152576, guid: 9cba7d2698ca82e4492db9a88537d585, type: 3}
-  StartingHealth: 100
-  MovementSpeed: 5
-  ShootingCooldown: 0.5
-  BulletDamage: 10
+  VisualPrefab: {fileID: 8746990519031152576, guid: 837076e5d2e4413449a10e259a9b6aac, type: 3}
+  StartingHealth: 50
+  MovementSpeed: 6
+  ShootingCooldown: 0.8
+  BulletDamage: 35
   BulletSize: 0.2
-  BulletSpeed: 7
+  BulletSpeed: 12

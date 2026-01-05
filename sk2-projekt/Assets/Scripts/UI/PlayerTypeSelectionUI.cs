@@ -13,7 +13,7 @@ public class PlayerTypeSelectionUI : WindowUI
     protected override void Awake()
     {
         base.Awake();
-        for (int i = 0; i < _buttons.Count - 1; i++)
+        for (int i = 0; i < _buttons.Count; i++)
         {
             int index = i;
             _buttons[i].onClick.AddListener(() => OnPlayerTypeSelected(index));
@@ -23,6 +23,7 @@ public class PlayerTypeSelectionUI : WindowUI
 
     private void OnPlayerTypeSelected(int playerType)
     {
+        Debug.Log("Button for player type " + playerType + " pressed");
         SelectedPlayerType = playerType;
         GameManager.Instance.SpawnLocalPlayer(playerType);
         Close();

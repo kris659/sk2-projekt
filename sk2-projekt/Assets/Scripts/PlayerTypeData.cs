@@ -6,7 +6,7 @@ public class PlayerTypeData : ScriptableObject
     public GameObject VisualPrefab;
     public int StartingHealth;
     public float MovementSpeed;
-    public float FireRate;
+    public float ShootingCooldown;
     public int BulletDamage;
     public float BulletSize;
     public float BulletSpeed;

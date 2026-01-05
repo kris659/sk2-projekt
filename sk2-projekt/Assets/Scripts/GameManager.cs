@@ -1,19 +1,28 @@
+using System;
 using System.Collections.Generic;
+using Unity.Cinemachine;
 using UnityEngine;
 
 public class GameManager : MonoBehaviourSingleton<GameManager>
 {
+    public event Action PlayerScoresUpdated;
+
     [SerializeField] private List<PlayerTypeData> _playerTypes;
+    [SerializeField] private CinemachineCamera _playerCamera;
     [SerializeField] private GameObject _playerPrefab;
     [SerializeField] private GameObject _bulletPrefab;
     [SerializeField] private Transform _playersParent;
 
+    public IReadOnlyDictionary<int, Player> Players => _players;
     private Dictionary<int, Player> _players = new ();
     private Dictionary<int, Bullet> _bullets = new ();
-    private Player _localPlayer;
+    public Player LocalPlayer { get; private set; }
 
     private void Start()
     {
+        Application.targetFrameRate = 60;
+
+        NetworkManager.Instance.Connected += Connected;
         NetworkManager.Instance.Disconnected += Disconected;
         NetworkManager.Instance.TcpMessageReceived += TcpMessageReceived;
         NetworkManager.Instance.UdpMessageReceived += UdpMessageReceived;
@@ -24,9 +33,15 @@ public class GameManager : MonoBehaviourSingleton<GameManager>
     {
         if(NetworkManager.Instance == null)
             return;
+        NetworkManager.Instance.Connected -= Connected;
         NetworkManager.Instance.Disconnected -= Disconected;
         NetworkManager.Instance.TcpMessageReceived -= TcpMessageReceived;
         NetworkManager.Instance.UdpMessageReceived -= UdpMessageReceived;
+    }
+
+    private void Connected()
+    {
+        //UIManager.Instance.LeaderboardUI.Open();
     }
 
     private void Disconected()
@@ -43,12 +58,22 @@ public class GameManager : MonoBehaviourSingleton<GameManager>
         }
         _players.Clear();
         _bullets.Clear();
-        _localPlayer = null;
+        LocalPlayer = null;
+
+        if(UIManager.Instance != null && UIManager.Instance.LeaderboardUI) 
+            UIManager.Instance.LeaderboardUI.Close();
     }
 
     public void SpawnLocalPlayer(int playerTypeIndex)
     {
-        NetworkManager.Instance.TcpSendMessageToServer(string.Format("I;{0};{1};{2};", NetworkManager.Instance.UdpLocalPort, UIManager.Instance.LobbyUI.PlayerName, playerTypeIndex));
+        UIManager.Instance.LeaderboardUI.Open();
+        PlayerTypeData playerTypeData = _playerTypes[playerTypeIndex];
+        NetworkManager.Instance.TcpSendMessageToServer($"I;" +
+            $"{NetworkManager.Instance.UdpLocalPort};" +
+            $"{UIManager.Instance.LobbyUI.PlayerName};" +
+            $"{playerTypeIndex};{playerTypeData.BulletDamage};" +
+            $"{playerTypeData.BulletSpeed};" +
+            $"{playerTypeData.StartingHealth};");
     }
 
     private void TcpMessageReceived(string message)
@@ -83,7 +108,49 @@ public class GameManager : MonoBehaviourSingleton<GameManager>
             case "E":
                 RemoveBullet(trimmedMessage);
                 break;
+            case "P":
+                UpdatePlayerScores(trimmedMessage);
+                break;
         }
+    }
+
+    private void UpdatePlayerScores(string message)
+    {
+        //for (const auto&i : players){
+        //    scoreUpdate = scoreUpdate + std::to_string(i.second.playerId) + ";" + std::to_string(i.second.points) + "!";
+        //}
+        //scoreUpdate += "~";
+
+        string[] playersData = message.Split("!");
+
+        foreach (string playerData in playersData) {
+            if(playerData.Trim() == string.Empty)
+                continue;
+
+            string[] parts = playerData.Split(";");
+
+            if(parts.Length < 2) {
+                Debug.LogWarning("[GM] Incorrect player score update format!: " + string.Join(',', parts));
+                continue;
+            }
+            if (!int.TryParse(parts[0], out int playerId)) {
+                Debug.LogWarning("[GM] Failed to parse player ID: " + parts[0]);
+                continue;
+            }
+            if (!int.TryParse(parts[1], out int score)) {
+                Debug.LogWarning("[GM] Failed to parse player score: " + parts[1]);
+                continue;
+            }
+
+            if (!_players.ContainsKey(playerId)) {
+                Debug.LogWarning($"Player with ID:{playerId} doesn't exist");
+                continue;
+            }
+
+            Player player = _players[playerId];
+            player.SetScore(score);
+        }
+        PlayerScoresUpdated?.Invoke();
     }
 
     private void RemoveBullet(string message)
@@ -193,7 +260,14 @@ public class GameManager : MonoBehaviourSingleton<GameManager>
         _bullets[bulletId] = bullet;
 
         Vector2Int position = new Vector2Int(positionX, positionY);
-        bullet.Init(position.ToLocal(), rotation, bulletId);
+
+        if(!_players.ContainsKey(shooterId)) {
+            Debug.LogWarning($"Player with ID:{shooterId} doesn't exist");
+            return;
+        }
+
+        float speed = _players[shooterId].PlayerTypeData.BulletSpeed;
+        bullet.Init(position.ToLocal(), rotation, bulletId, speed);
     }
 
     private void RemovePlayer(string message)
@@ -249,7 +323,7 @@ public class GameManager : MonoBehaviourSingleton<GameManager>
 
             Player player = _players[playerId];
 
-            if (_localPlayer == player)
+            if (LocalPlayer == player)
                 continue;
 
             Vector2Int position = new Vector2Int(positionX, positionY);
@@ -276,11 +350,12 @@ public class GameManager : MonoBehaviourSingleton<GameManager>
         GameObject playerObject = Instantiate(_playerPrefab, _playersParent);
         playerObject.AddComponent<PlayerController>();
 
-        _localPlayer = playerObject.GetComponent<Player>();
-        _localPlayer.Init(_playerTypes[playerTypeIndex], UIManager.Instance.LobbyUI.PlayerName);
+        LocalPlayer = playerObject.GetComponent<Player>();
+        LocalPlayer.Init(_playerTypes[playerTypeIndex], UIManager.Instance.LobbyUI.PlayerName);
 
-        _localPlayer.SetPositionAndRotation(position, 0f);
-        _players[NetworkManager.Instance.PlayerID] = _localPlayer;
+        LocalPlayer.SetPositionAndRotation(position, 0f);
+        _players[NetworkManager.Instance.PlayerID] = LocalPlayer;
+        _playerCamera.Target.TrackingTarget = LocalPlayer.transform;
     }
 
     private void SpawnRemotePlayer(Vector3 position, int playerTypeIndex, int playerId, string playerName)
@@ -304,16 +379,21 @@ public class GameManager : MonoBehaviourSingleton<GameManager>
         }
         string playerName = parts[1];
 
-        if (!int.TryParse(parts[2], out int positionX)) {
-            Debug.LogWarning("[GM] Failed to parse position X: " + parts[2]);
+        if (!int.TryParse(parts[2], out int playerTypeIndex)) {
+            Debug.LogWarning("[GM] Failed to parse playerType: " + parts[2]);
             return;
         }
 
-        if (!int.TryParse(parts[3], out int positionY)) {
+        if (!int.TryParse(parts[3], out int positionX)) {
+            Debug.LogWarning("[GM] Failed to parse position X: " + parts[3]);
+            return;
+        }
+
+        if (!int.TryParse(parts[4], out int positionY)) {
             Debug.LogWarning("[GM] Failed to parse position Y");
             return;
         }
-        if (!int.TryParse(parts[4], out int rotation)) {
+        if (!int.TryParse(parts[5], out int rotation)) {
             Debug.LogWarning("[GM] Failed to parse rotation");
             return;
         }
@@ -327,13 +407,13 @@ public class GameManager : MonoBehaviourSingleton<GameManager>
         }
 
         Vector2Int position = new Vector2Int(positionX, positionY);
-        SpawnRemotePlayer(position.ToLocal(), 0, playerId, playerName);
+        SpawnRemotePlayer(position.ToLocal(), playerTypeIndex, playerId, playerName);
     }
 
     private void InitPlayers(string message)
     {
         Debug.Log("Init players from message: " + message);
-        string[] playersData = message.TrimStart('M', ';').Split("!");
+        string[] playersData = message.Split("!");
 
         foreach (string playerData in playersData) {
             AddRemotePlayer(playerData);
