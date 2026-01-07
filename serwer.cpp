@@ -143,7 +143,7 @@ void handleNewClient(epoll_event ee){
     send(clientFd, s.c_str(), s.size(), 0);
 }
 
-void handlePlayerDisconnect(int clientFd, playerId){
+void handlePlayerDisconnect(int clientFd, int playerId){
     if(playerId != -1){
         printf("Client Id: %d, tcpFd: %d disconnected\n", playerId, clientFd);
         std::string discMessage = "D;" + std::to_string(playerId) + "~";
@@ -201,7 +201,7 @@ void handleMsgInit(int playerId, int clientFd, const char* del) {
 }
 
 void handleMsgShoot(int playerId, const char* del) {
-    std::cout << "Player " << playerId << " shooting" << std::endl;
+    // std::cout << "Player " << playerId << " shooting" << std::endl;
     char *t = strtok(nullptr, del);
     int positionX = atoi(t);
     t = strtok(nullptr, del);
@@ -210,7 +210,7 @@ void handleMsgShoot(int playerId, const char* del) {
     int rotation = atoi(t);
 
     if(!players[playerId].isAlive){
-        std::cout << "Player " << playerId << " is dead, cannot shoot" << std::endl;
+        // std::cout << "Player " << playerId << " is dead, cannot shoot" << std::endl;
         return;
     }
 
@@ -225,7 +225,7 @@ void handleMsgShoot(int playerId, const char* del) {
     bulletData.damage = players[playerId].damage;
 
     bullets[bulletData.bulletId] = bulletData;
-    std::cout << "Player " << playerId << " shooted" << std::endl;
+    // std::cout << "Player " << playerId << " shooted" << std::endl;
     
     std::string shootMessage = "S;" + std::to_string(bulletData.bulletId) + ";" + std::to_string(bulletData.ownerPlayerId) + ";" + std::to_string(bulletData.positionX) + ";" + std::to_string(bulletData.positionY) + ";" + std::to_string(bulletData.direction) + "~";
     tcpSendMessageToPlayers(shootMessage.c_str(), shootMessage.size());
@@ -565,7 +565,7 @@ void sendToAllBut(int fd, const char *buffer, int count) {
     // buffer overflows, then the 'shutdown' below triggers 'read' to fail.
     for (int clientFd : bad) {
         printf("Write failed on %d\n", clientFd);
-        handlePlayerDisconnect(clientFd, , getPlayerId(clientFd));
+        handlePlayerDisconnect(clientFd, getPlayerId(clientFd));
     }
 }
 

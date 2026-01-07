@@ -46,13 +46,10 @@ public class NetworkManager : MonoBehaviourSingleton<NetworkManager>
         }
     }
 
-    public async void ConnectToServer(string adress, int port, string playerName)
+    public async void ConnectToServer(IPAddress ipAddr, int port, string playerName)
     {
         IPHostEntry ipHost = Dns.GetHostEntry(Dns.GetHostName());
-        if (!IPAddress.TryParse(adress, out IPAddress ipAddr)){
-            Debug.Log("Incorrect IP adress");
-            return;
-        }
+        
         IPEndPoint ipEndPoint = new IPEndPoint(ipAddr, port);
 
         _tcpSocket = new(
@@ -67,7 +64,7 @@ public class NetworkManager : MonoBehaviourSingleton<NetworkManager>
         var timeoutTask = Task.Delay(TimeSpan.FromSeconds(5));
         var cancelTask = Task.Delay(Timeout.InfiniteTimeSpan, userToken);
 
-        UIManager.Instance.InfoUI.Open($"Hello {playerName}!\nConnecting to {adress}:{port}...", "Cancel", _connectCancelToken.Cancel);
+        UIManager.Instance.InfoUI.Open($"Hello {playerName}!\nConnecting to {ipAddr}:{port}...", "Cancel", _connectCancelToken.Cancel);
 
         try {
             var finished = await Task.WhenAny(connectTask, timeoutTask, cancelTask);
@@ -119,7 +116,7 @@ public class NetworkManager : MonoBehaviourSingleton<NetworkManager>
         Debug.Log($"Player ID: {playerID}, udp port: {udpPort}");
 
         _udpClient = new UdpClient();
-        _udpClient.Connect(adress, udpPort);
+        _udpClient.Connect(ipAddr.ToString(), udpPort);
 
         IPEndPoint localEndPoint = (IPEndPoint)_udpClient.Client.LocalEndPoint;
         UdpLocalPort = localEndPoint.Port;
