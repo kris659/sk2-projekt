@@ -30,9 +30,9 @@ class PlayerData {
   public:
     int playerId;
     int tcpFd;
-    int udpFd;
     std::string name;
 
+    bool isInitialized;
     bool isAlive;
     int health;
 
@@ -86,7 +86,7 @@ void ctrl_c(int);
 // sends data to clientFds excluding fd
 void sendToAllBut(int fd, const char *buffer, int count);
 
-void tcpSendMessageToPlayers(std::string buffer);
+void tcpSendMessageToPlayers(const char *buffer, int count);
 
 int getRandomNumberInRange(int min, int max){
     int randomNum = min + rand() % (max - min);
@@ -109,12 +109,13 @@ void handleNewClient(epoll_event ee){
     // add client to all clients set
     int playerId = nextPlayerID++;
 
-    PlayerData playerData;
+    PlayerData playerData {};
     playerData.playerId = playerId;
     playerData.tcpFd = clientFd;
     playerData.playerAddr.sin_addr = ((sockaddr_in *)&clientAddr)->sin_addr;
     playerData.playerAddr.sin_family = AF_INET;
     playerData.isAlive = false;
+    playerData.isInitialized = false;
     playerData.health = 0;
     playerData.rotation = 0;
     players[playerId] = playerData;
@@ -145,7 +146,7 @@ void handlePlayerDisconnect(int clientFd){
         std::string discMessage = "D;" + std::to_string(disconnectedPlayerId) + "~";
         players.erase(disconnectedPlayerId);
 
-        tcpSendMessageToPlayers(discMessage);
+        tcpSendMessageToPlayers(discMessage.c_str(), discMessage.size());
     }
 
     epoll_ctl(epollDesc, EPOLL_CTL_DEL, clientFd, nullptr);
@@ -216,6 +217,7 @@ void tpcHandleMessageFromClient(epoll_event ee){
                 int hp = atoi(t);
                 
                 players[playerId].playerAddr.sin_port = htons(playerUdpPort);
+                players[playerId].isInitialized = true;
                 players[playerId].name = name;
                 players[playerId].type = type;
                 players[playerId].points = 0;
@@ -237,12 +239,11 @@ void tpcHandleMessageFromClient(epoll_event ee){
                     map = map + std::to_string(i.second.playerId) + ";" + i.second.name + ";" + std::to_string(i.second.type) + ";" + std::to_string(i.second.positionX) + ";" + std::to_string(i.second.positionY) + ";" + std::to_string(i.second.rotation) + "!";
                 }
                 map += "~";
-                int count = map.size();
 
-                send(clientFd, map.c_str(), count, 0);
+                send(clientFd, map.c_str(), map.size(), 0);
 
                 std::string connMessage = "C;" + std::to_string(playerId) + ";" + players[playerId].name + ";" + std::to_string(players[playerId].type) + ";" + std::to_string(players[playerId].positionX) + ";" + std::to_string(players[playerId].positionY) + ";" + std::to_string(players[playerId].rotation) + "~";
-                tcpSendMessageToPlayers(connMessage);
+                tcpSendMessageToPlayers(connMessage.c_str(), connMessage.size());
 
                 break;
             }
@@ -275,7 +276,7 @@ void tpcHandleMessageFromClient(epoll_event ee){
                 std::cout << "Player " << playerId << " shooted" << std::endl;
                 //info o nowym pocisku do wszystkich
                 std::string shootMessage = "S;" + std::to_string(bulletData.bulletId) + ";" + std::to_string(bulletData.ownerPlayerId) + ";" + std::to_string(bulletData.positionX) + ";" + std::to_string(bulletData.positionY) + ";" + std::to_string(bulletData.direction) + "~";
-                tcpSendMessageToPlayers(shootMessage);
+                tcpSendMessageToPlayers(shootMessage.c_str(), shootMessage.size());
                 break;
             }
             case 'C':
@@ -286,7 +287,7 @@ void tpcHandleMessageFromClient(epoll_event ee){
                 std::string text = std::to_string(id) + std::string(t); // check if t is null first for safety
 
                 if(clientFd != STDOUT_FILENO)
-                    write(STDOUT_FILENO, buffer, count);
+                    write(STDOUT_FILENO, buffer, (size_t)count);
                 sendToAllBut(clientFd, buffer, count);
                 break;
             }
@@ -358,6 +359,8 @@ void udpSendMessageToPlayers(){
     int count = buffer.size();
     //std::cout << "UDP Update: " << buffer << std::endl;
     for (const auto& i : players) {
+        if(!i.second.isInitialized)
+            continue;
         sendto(udpFd, buffer.c_str(), count, 0, (sockaddr *)&i.second.playerAddr, sizeof(i.second.playerAddr));
         //std::cout << "UDP Update: "<< i.first << ": " << buffer << std::endl;
     }
@@ -406,7 +409,7 @@ void bulletsUpdate(int ms) {
                                          std::to_string(bulletData.bulletId) + ";" + 
                                          std::to_string(players[player.playerId].health) + ";" + 
                                          std::to_string(players[player.playerId].isAlive) + "~";
-                tcpSendMessageToPlayers(hitmessage);
+                tcpSendMessageToPlayers(hitmessage.c_str(), hitmessage.size());
 
                
                 it = bullets.erase(it); 
@@ -425,7 +428,7 @@ void bulletsUpdate(int ms) {
 
         if (bulletData.lifetime <= 0) {
             std::string mess = "E;" + std::to_string(bulletData.bulletId) + "~";
-            tcpSendMessageToPlayers(mess);
+            tcpSendMessageToPlayers(mess.c_str(), mess.size());
             it = bullets.erase(it);
         } else {
             ++it;
@@ -433,13 +436,12 @@ void bulletsUpdate(int ms) {
     }
 }
 
-void tcpSendMessageToPlayers(std::string buffer)
+void tcpSendMessageToPlayers(const char *buffer, int count)
 {
     std::unordered_set<int> bad;
-    int count = buffer.size();
 
     for (const auto& i : players) {
-        if (count != send(i.second.tcpFd, buffer.c_str(), count, MSG_DONTWAIT))
+        if (count != send(i.second.tcpFd, buffer, count, MSG_DONTWAIT))
             bad.insert(i.second.tcpFd);    
     }
 
@@ -514,7 +516,7 @@ int main(int argc, char **argv) {
                     
                 }
                 scoreUpdate += "~";
-                tcpSendMessageToPlayers(scoreUpdate);
+                tcpSendMessageToPlayers(scoreUpdate.c_str(), scoreUpdate.size());
             }
             bulletsUpdate(ms);
             lastTimeSendUdp = std::chrono::high_resolution_clock::now();
@@ -522,8 +524,6 @@ int main(int argc, char **argv) {
         }
 
         int timeout = cooldown - ms;
-        if (timeout < 0) timeout = 0;
-
 
         if(epoll_wait(epollDesc, &ee, 1, timeout) <= 0){
             continue;
@@ -554,6 +554,7 @@ void ctrl_c(int) {
         close(i.second.tcpFd); 
     }
     close(tcpFd);
+    close(udpFd);
     printf("Closing server\n");
     exit(0);
 }
@@ -564,7 +565,7 @@ void sendToAllBut(int fd, const char *buffer, int count) {
     for (const auto& i : players) {
         if (i.second.tcpFd == fd)
             continue;
-        if (count != send(i.second.tcpFd, buffer, count, MSG_DONTWAIT))
+        if (count != send(i.second.tcpFd, buffer, (size_t)count, MSG_DONTWAIT))
             bad.insert(i.second.tcpFd);    
     }
 
@@ -620,5 +621,6 @@ int getaddrinfo_socket_bind_listen(int sockType, const char *port) {
             error(1, errno, "listen failed");
     }
     
+    freeaddrinfo(res);
     return sockFd;
 }
