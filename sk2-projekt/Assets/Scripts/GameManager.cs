@@ -351,19 +351,19 @@ public class GameManager : MonoBehaviourSingleton<GameManager>
         playerObject.AddComponent<PlayerController>();
 
         LocalPlayer = playerObject.GetComponent<Player>();
-        LocalPlayer.Init(_playerTypes[playerTypeIndex], UIManager.Instance.LobbyUI.PlayerName);
+        LocalPlayer.Init(_playerTypes[playerTypeIndex], UIManager.Instance.LobbyUI.PlayerName, -1);
 
         LocalPlayer.SetPositionAndRotation(position, 0f);
         _players[NetworkManager.Instance.PlayerID] = LocalPlayer;
         _playerCamera.Target.TrackingTarget = LocalPlayer.transform;
     }
 
-    private void SpawnRemotePlayer(Vector3 position, int playerTypeIndex, int playerId, string playerName)
+    private void SpawnRemotePlayer(Vector3 position, int playerTypeIndex, int playerId, string playerName, int health)
     {
         GameObject playerObject = Instantiate(_playerPrefab, _playersParent);
 
         Player player = playerObject.GetComponent<Player>();
-        player.Init(_playerTypes[playerTypeIndex], playerName);
+        player.Init(_playerTypes[playerTypeIndex], playerName, health);
         player.SetPositionAndRotation(position, 0f);
         _players[playerId] = player;
     }
@@ -397,6 +397,13 @@ public class GameManager : MonoBehaviourSingleton<GameManager>
             Debug.LogWarning("[GM] Failed to parse rotation");
             return;
         }
+        int health = -1;
+        if(parts.Length > 6) {
+            if (!int.TryParse(parts[6], out health)) {
+                Debug.LogWarning("[GM] Failed to parse player health");
+                return;
+            }
+        }
 
         if (NetworkManager.Instance.PlayerID == playerId)
             return;
@@ -407,7 +414,7 @@ public class GameManager : MonoBehaviourSingleton<GameManager>
         }
 
         Vector2Int position = new Vector2Int(positionX, positionY);
-        SpawnRemotePlayer(position.ToLocal(), playerTypeIndex, playerId, playerName);
+        SpawnRemotePlayer(position.ToLocal(), playerTypeIndex, playerId, playerName, health);
     }
 
     private void InitPlayers(string message)

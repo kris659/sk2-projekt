@@ -17,10 +17,13 @@ public class Player : MonoBehaviour
 
     public GameObject Visual { get; private set; }
 
-    public void Init(PlayerTypeData playerTypeData, string playerName)
+    public void Init(PlayerTypeData playerTypeData, string playerName, int health)
     {
         PlayerTypeData = playerTypeData;
-        Health = playerTypeData.StartingHealth;
+        if(health > 0)
+            Health = health;
+        else
+            Health = playerTypeData.StartingHealth;
         PlayerName = playerName;
 
         Visual = Instantiate(playerTypeData.VisualPrefab, transform);

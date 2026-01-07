@@ -16,7 +16,9 @@
 #include <iostream>
 #include <fcntl.h>
 
-int ticks = 32;
+int ticksPerSecond = 32;
+int tickCount = 0;
+
 int tcpPort;
 int udpPort;
 int nextPlayerID = 0;
@@ -93,6 +95,15 @@ int getRandomNumberInRange(int min, int max){
     return randomNum; 
 }
 
+int getPlayerId(int clientFd) {
+    for (auto& i : players) {
+        if (i.second.tcpFd == clientFd) {
+            return i.second.playerId;
+        }
+    }
+    return -1;
+}
+
 void handleNewClient(epoll_event ee){
     // prepare placeholders for client address
     sockaddr_storage clientAddr{};
@@ -132,19 +143,11 @@ void handleNewClient(epoll_event ee){
     send(clientFd, s.c_str(), s.size(), 0);
 }
 
-void handlePlayerDisconnect(int clientFd){
-    int disconnectedPlayerId = -1;
-    for (const auto& i : players) {
-        if (i.second.tcpFd == clientFd) {
-            disconnectedPlayerId = i.second.playerId;
-            break;
-        }
-    }
-
-    if(disconnectedPlayerId != -1){
-        printf("Client Id: %d, tcpFd: %d disconnected\n", disconnectedPlayerId, clientFd);
-        std::string discMessage = "D;" + std::to_string(disconnectedPlayerId) + "~";
-        players.erase(disconnectedPlayerId);
+void handlePlayerDisconnect(int clientFd, playerId){
+    if(playerId != -1){
+        printf("Client Id: %d, tcpFd: %d disconnected\n", playerId, clientFd);
+        std::string discMessage = "D;" + std::to_string(playerId) + "~";
+        players.erase(playerId);
 
         tcpSendMessageToPlayers(discMessage.c_str(), discMessage.size());
     }
@@ -154,20 +157,109 @@ void handlePlayerDisconnect(int clientFd){
     close(clientFd);
 }
 
-void tpcHandleMessageFromClient(epoll_event ee){
+void handleMsgInit(int playerId, int clientFd, const char* del) {
+    char *t = strtok(nullptr, del);
+    int playerUdpPort = atoi(t);
+    t = strtok(nullptr, del);
+    std::string name = std::string(t);
+    t = strtok(nullptr, del);
+    int type = atoi(t);
+    t = strtok(nullptr, del);
+    int damage = atoi(t);
+    t = strtok(nullptr, del);
+    int bulletSpeed = atoi(t);
+    t = strtok(nullptr, del);
+    int hp = atoi(t);
+    
+    players[playerId].playerAddr.sin_port = htons(playerUdpPort);
+    players[playerId].isInitialized = true;
+    players[playerId].name = name;
+    players[playerId].type = type;
+    players[playerId].points = 0;
+    players[playerId].isAlive = true;
+    players[playerId].damage = damage;
+    players[playerId].bulletSpeed = bulletSpeed;
+    players[playerId].health = hp;
+    players[playerId].positionX = getRandomNumberInRange(0, 1000);
+    players[playerId].positionY = getRandomNumberInRange(0, 1000);
 
-    int playerId = -1;
-    int clientFd = ee.data.fd;
+    std::string s = "I;" + std::to_string(players[playerId].positionX) + ";" + std::to_string(players[playerId].positionY) + "~";
+    send(clientFd, s.c_str(), s.size(), 0);
 
-    for (auto& i : players) {
-        if (i.second.tcpFd == clientFd) {
-            playerId = i.second.playerId;
-            break;
-        }
+    std::string map = "M;";
+    for(const auto& i : players){
+        if(!i.second.isAlive)
+            continue;
+        map = map + std::to_string(i.second.playerId) + ";" + i.second.name + ";" + std::to_string(i.second.type) + ";" + std::to_string(i.second.positionX) + ";" + std::to_string(i.second.positionY) + ";" + std::to_string(i.second.rotation) + ";" + std::to_string(i.second.health) + "!";
+    }
+    map += "~";
+
+    send(clientFd, map.c_str(), map.size(), 0);
+
+    std::string connMessage = "C;" + std::to_string(playerId) + ";" + players[playerId].name + ";" + std::to_string(players[playerId].type) + ";" + std::to_string(players[playerId].positionX) + ";" + std::to_string(players[playerId].positionY) + ";" + std::to_string(players[playerId].rotation) + "~";
+    tcpSendMessageToPlayers(connMessage.c_str(), connMessage.size());
+}
+
+void handleMsgShoot(int playerId, const char* del) {
+    std::cout << "Player " << playerId << " shooting" << std::endl;
+    char *t = strtok(nullptr, del);
+    int positionX = atoi(t);
+    t = strtok(nullptr, del);
+    int positionY = atoi(t);
+    t = strtok(nullptr, del);
+    int rotation = atoi(t);
+
+    if(!players[playerId].isAlive){
+        std::cout << "Player " << playerId << " is dead, cannot shoot" << std::endl;
+        return;
     }
 
+    BulletData bulletData;
+    bulletData.bulletId = nextBulletID++;
+    bulletData.ownerPlayerId = playerId;
+    bulletData.positionX = positionX;
+    bulletData.positionY = positionY;
+    bulletData.direction = rotation;
+    bulletData.speed = players[playerId].bulletSpeed;
+    bulletData.lifetime = 128;
+    bulletData.damage = players[playerId].damage;
+
+    bullets[bulletData.bulletId] = bulletData;
+    std::cout << "Player " << playerId << " shooted" << std::endl;
+    
+    std::string shootMessage = "S;" + std::to_string(bulletData.bulletId) + ";" + std::to_string(bulletData.ownerPlayerId) + ";" + std::to_string(bulletData.positionX) + ";" + std::to_string(bulletData.positionY) + ";" + std::to_string(bulletData.direction) + "~";
+    tcpSendMessageToPlayers(shootMessage.c_str(), shootMessage.size());
+}
+
+void processMessage(int playerId, int clientFd, std::string& message, char* rawBuffer, int rawCount) {
+    std::vector<char> msgBuf(message.begin(), message.end());
+    msgBuf.push_back('\0');
+
+    const char* del = ";";
+    char *t = strtok(msgBuf.data(), del);
+    
+    if (!t) return;
+
+    char messageType = t[0];
+
+    switch (messageType){
+        case 'I':
+            handleMsgInit(playerId, clientFd, del);
+            break;
+        case 'S':
+            handleMsgShoot(playerId, del);
+            break;
+        default:
+            break;
+    }
+}
+
+void tpcHandleMessageFromClient(epoll_event ee) {
+    int clientFd = ee.data.fd;
+    int playerId = getPlayerId(clientFd);
+
     if(playerId == -1){
-        handlePlayerDisconnect(clientFd);
+        handlePlayerDisconnect(clientFd, playerId);
         return;
     }
 
@@ -178,124 +270,18 @@ void tpcHandleMessageFromClient(epoll_event ee){
         if (count == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
             return;
         }
-        handlePlayerDisconnect(clientFd);
+        handlePlayerDisconnect(clientFd, playerId);
         return;
     }
-    // printf("%s\n", buffer);
+
     players[playerId].inputBuffer += std::string(buffer, count);
 
     size_t pos = 0;
-    while ((pos = players[playerId].inputBuffer.find('~')) != std::string::npos)
-    {
+    while ((pos = players[playerId].inputBuffer.find('~')) != std::string::npos) {
         std::string message = players[playerId].inputBuffer.substr(0, pos);
         players[playerId].inputBuffer.erase(0, pos + 1);
 
-        std::vector<char> msgBuf(message.begin(), message.end());
-        msgBuf.push_back('\0');
-
-        const char* del = ";";
-        char *t = strtok(msgBuf.data(), del);
-        
-        if (!t) 
-            continue;
-
-        char messageType = t[0];
-
-        switch (messageType){
-            case 'I':{
-                t = strtok(nullptr, del);
-                int playerUdpPort = atoi(t);
-                t = strtok(nullptr, del);
-                std::string name = std::string(t);
-                t = strtok(nullptr, del);
-                int type = atoi(t);
-                t = strtok(nullptr, del);
-                int damage = atoi(t);
-                t = strtok(nullptr, del);
-                int bulletSpeed = atoi(t);
-                t = strtok(nullptr, del);
-                int hp = atoi(t);
-                
-                players[playerId].playerAddr.sin_port = htons(playerUdpPort);
-                players[playerId].isInitialized = true;
-                players[playerId].name = name;
-                players[playerId].type = type;
-                players[playerId].points = 0;
-                players[playerId].isAlive = true;
-                players[playerId].damage = damage;
-                players[playerId].bulletSpeed = bulletSpeed;
-                players[playerId].health = hp;
-                players[playerId].positionX = getRandomNumberInRange(0, 1000);
-                players[playerId].positionY = getRandomNumberInRange(0, 1000);
-
-
-                std::string s = "I;" + std::to_string(players[playerId].positionX) + ";" + std::to_string(players[playerId].positionY) + "~";
-                send(clientFd, s.c_str(), s.size(), 0);
-
-                std::string map = "M;";
-                for(const auto& i : players){
-                    if(!i.second.isAlive)
-                        continue;
-                    map = map + std::to_string(i.second.playerId) + ";" + i.second.name + ";" + std::to_string(i.second.type) + ";" + std::to_string(i.second.positionX) + ";" + std::to_string(i.second.positionY) + ";" + std::to_string(i.second.rotation) + ";" + std::to_string(i.second.health) + "!";
-                }
-                map += "~";
-
-                send(clientFd, map.c_str(), map.size(), 0);
-
-                std::string connMessage = "C;" + std::to_string(playerId) + ";" + players[playerId].name + ";" + std::to_string(players[playerId].type) + ";" + std::to_string(players[playerId].positionX) + ";" + std::to_string(players[playerId].positionY) + ";" + std::to_string(players[playerId].rotation) + "~";
-                tcpSendMessageToPlayers(connMessage.c_str(), connMessage.size());
-
-                break;
-            }
-            case 'S':
-            {   
-                std::cout << "Player " << playerId << " shooting" << std::endl;
-                t = strtok(nullptr, del);
-                int positionX = atoi(t);
-                t = strtok(nullptr, del);
-                int positionY = atoi(t);
-                t = strtok(nullptr, del);
-                int rotation = atoi(t);
-
-                if(!players[playerId].isAlive){
-                    std::cout << "Player " << playerId << " is dead, cannot shoot" << std::endl;
-                    break;
-                }
-
-                BulletData bulletData;
-                bulletData.bulletId = nextBulletID++;
-                bulletData.ownerPlayerId = playerId;
-                bulletData.positionX = positionX;
-                bulletData.positionY = positionY;
-                bulletData.direction = rotation;
-                bulletData.speed = players[playerId].bulletSpeed;
-                bulletData.lifetime = 128;
-                bulletData.damage = players[playerId].damage;
-
-                bullets[bulletData.bulletId] = bulletData;
-                std::cout << "Player " << playerId << " shooted" << std::endl;
-                //info o nowym pocisku do wszystkich
-                std::string shootMessage = "S;" + std::to_string(bulletData.bulletId) + ";" + std::to_string(bulletData.ownerPlayerId) + ";" + std::to_string(bulletData.positionX) + ";" + std::to_string(bulletData.positionY) + ";" + std::to_string(bulletData.direction) + "~";
-                tcpSendMessageToPlayers(shootMessage.c_str(), shootMessage.size());
-                break;
-            }
-            case 'C':
-            {
-                t = strtok(nullptr, del);
-                int id = atoi(t);
-                t = strtok(nullptr, del);
-                std::string text = std::to_string(id) + std::string(t); // check if t is null first for safety
-
-                if(clientFd != STDOUT_FILENO)
-                    write(STDOUT_FILENO, buffer, (size_t)count);
-                sendToAllBut(clientFd, buffer, count);
-                break;
-            }
-                
-            default:{
-                break;
-            }
-        }
+        processMessage(playerId, clientFd, message, buffer, count);
     }
 }
 
@@ -348,36 +334,17 @@ void udpHandleMultipleMessagesFromClient(){
     }
 }
 
-void udpSendMessageToPlayers(){
-    std::string buffer = "M;";
-    for(const auto& i : players){
-        if(!i.second.isAlive)
-            continue;
-        buffer = buffer + std::to_string(i.second.playerId) + ";" + std::to_string(i.second.positionX) + ";" + std::to_string(i.second.positionY) + ";" + std::to_string(i.second.rotation) + "!";
-    }
-    buffer += "~";
-    int count = buffer.size();
-    //std::cout << "UDP Update: " << buffer << std::endl;
-    for (const auto& i : players) {
-        if(!i.second.isInitialized)
-            continue;
-        sendto(udpFd, buffer.c_str(), count, 0, (sockaddr *)&i.second.playerAddr, sizeof(i.second.playerAddr));
-        //std::cout << "UDP Update: "<< i.first << ": " << buffer << std::endl;
-    }
-}
-
-void bulletsUpdate(int ms) {
+void bulletsUpdate(int deltaTime) {
     for (auto it = bullets.begin(); it != bullets.end(); ) {
         
-        // Dla wygody tworzymy referencję do pocisku
-        auto& bulletData = it->second; // to samo co bullets[i.first]
+        auto& bulletData = it->second; 
         bool bulletRemoved = false;
-        //int s = ms/1000;
-        // 1. Aktualizacja pozycji
-        bulletData.positionX += 100 * bulletData.speed * cos(bulletData.direction * M_PI / 180.0)*ms/1000;
-        bulletData.positionY += 100 *bulletData.speed * sin(bulletData.direction * M_PI / 180.0)*ms/1000;
 
-        // 2. Sprawdzanie kolizji z graczami
+        // Aktualizacja pozycji
+        bulletData.positionX += 100 * bulletData.speed * cos(bulletData.direction * M_PI / 180.0)*deltaTime/1000;
+        bulletData.positionY += 100 *bulletData.speed * sin(bulletData.direction * M_PI / 180.0)*deltaTime/1000;
+
+        // Sprawdzanie kolizji z graczami
         for (const auto& playerEntry : players) {
             const auto& player = playerEntry.second;
 
@@ -398,23 +365,23 @@ void bulletsUpdate(int ms) {
 
                 
                 if (players[player.playerId].health <= 0) {
-                    players[player.playerId].isAlive = false;
                     printf("Player %d has died.\n", player.playerId);
+
+                    players[player.playerId].isAlive = false;
                     players[bulletData.ownerPlayerId].points += 100;
                     players[player.playerId].health = 0;
                 }
 
              
-                std::string hitmessage = "H;" + std::to_string(player.playerId) + ";" + 
+                std::string hitMessage = "H;" + std::to_string(player.playerId) + ";" + 
                                          std::to_string(bulletData.bulletId) + ";" + 
                                          std::to_string(players[player.playerId].health) + ";" + 
                                          std::to_string(players[player.playerId].isAlive) + "~";
-                tcpSendMessageToPlayers(hitmessage.c_str(), hitmessage.size());
+                tcpSendMessageToPlayers(hitMessage.c_str(), hitMessage.size());
 
                
                 it = bullets.erase(it); 
                 bulletRemoved = true;
-                
                 break; 
             }
         }
@@ -447,8 +414,51 @@ void tcpSendMessageToPlayers(const char *buffer, int count)
 
     for (int clientFd : bad) {
         printf("Write failed on %d\n", clientFd);
-        handlePlayerDisconnect(clientFd);
+        handlePlayerDisconnect(clientFd, getPlayerId(clientFd));
     }
+}
+
+void udpSendMessageToPlayers(){
+    std::string buffer = "M;";
+    for(const auto& i : players){
+        if(!i.second.isAlive)
+            continue;
+        buffer = buffer + std::to_string(i.second.playerId) + ";" + std::to_string(i.second.positionX) + ";" + std::to_string(i.second.positionY) + ";" + std::to_string(i.second.rotation) + "!";
+    }
+    buffer += "~";
+    int count = buffer.size();
+    //std::cout << "UDP Update: " << buffer << std::endl;
+    for (const auto& i : players) {
+        if(!i.second.isInitialized)
+            continue;
+        sendto(udpFd, buffer.c_str(), count, 0, (sockaddr *)&i.second.playerAddr, sizeof(i.second.playerAddr));
+        //std::cout << "UDP Update: "<< i.first << ": " << buffer << std::endl;
+    }
+}
+
+void updatePlayersScore(){
+    std::string scoreUpdate = "P;";
+    for(const auto& i : players){
+        if(i.second.isAlive)
+            players[i.first].points += 1;
+    }
+    for(const auto& i : players){
+        if(!i.second.isAlive)
+            continue;
+        scoreUpdate = scoreUpdate + std::to_string(i.second.playerId) + ";" + std::to_string(i.second.points) + "!";
+        
+    }
+    scoreUpdate += "~";
+    tcpSendMessageToPlayers(scoreUpdate.c_str(), scoreUpdate.size());
+}
+
+void tickUpdate(int deltaTime){
+    udpSendMessageToPlayers();
+    if(tickCount % ticksPerSecond == 0){
+        updatePlayersScore();
+        tickCount = 0;
+    }
+    bulletsUpdate(deltaTime);
 }
 
 int main(int argc, char **argv) {
@@ -490,40 +500,21 @@ int main(int argc, char **argv) {
     ee.data.u32 = -2;
     epoll_ctl(epollDesc, EPOLL_CTL_ADD, udpFd, &ee);
 
-    int cooldown = 1000 / ticks;
-    auto lastTimeSendUdp = std::chrono::high_resolution_clock::now();
-    int tickCount = 0;
+    int cooldown = 1000 / ticksPerSecond;
+    auto lastTickTime = std::chrono::high_resolution_clock::now();
 
     while (true) {
-        auto dur = std::chrono::high_resolution_clock::now() - lastTimeSendUdp;
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(dur).count();
+        auto dur = std::chrono::high_resolution_clock::now() - lastTickTime;
+        auto deltaTime = std::chrono::duration_cast<std::chrono::milliseconds>(dur).count();
 
-        if(ms >= cooldown){
-            //printf("Sent UDP update to players\n");
-            udpSendMessageToPlayers();
+        if(deltaTime >= cooldown){
+            tickUpdate(deltaTime);
             tickCount++;
-            if(tickCount % ticks == 0){
-                tickCount = 0;
-                std::string scoreUpdate = "P;";
-                for(const auto& i : players){
-                    if(i.second.isAlive)
-                        players[i.first].points += 1;
-                }
-                for(const auto& i : players){
-                    if(!i.second.isAlive)
-                        continue;
-                    scoreUpdate = scoreUpdate + std::to_string(i.second.playerId) + ";" + std::to_string(i.second.points) + "!";
-                    
-                }
-                scoreUpdate += "~";
-                tcpSendMessageToPlayers(scoreUpdate.c_str(), scoreUpdate.size());
-            }
-            bulletsUpdate(ms);
-            lastTimeSendUdp = std::chrono::high_resolution_clock::now();
+            lastTickTime = std::chrono::high_resolution_clock::now();
             continue;
         }
 
-        int timeout = cooldown - ms;
+        int timeout = cooldown - deltaTime;
 
         if(epoll_wait(epollDesc, &ee, 1, timeout) <= 0){
             continue;
@@ -574,9 +565,7 @@ void sendToAllBut(int fd, const char *buffer, int count) {
     // buffer overflows, then the 'shutdown' below triggers 'read' to fail.
     for (int clientFd : bad) {
         printf("Write failed on %d\n", clientFd);
-        handlePlayerDisconnect(clientFd);
-        // clientFds.erase(clientFd);
-        // shutdown(clientFd, SHUT_RDWR);
+        handlePlayerDisconnect(clientFd, , getPlayerId(clientFd));
     }
 }
 
