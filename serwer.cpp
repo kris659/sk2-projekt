@@ -236,7 +236,7 @@ void tpcHandleMessageFromClient(epoll_event ee){
                 for(const auto& i : players){
                     if(!i.second.isAlive)
                         continue;
-                    map = map + std::to_string(i.second.playerId) + ";" + i.second.name + ";" + std::to_string(i.second.type) + ";" + std::to_string(i.second.positionX) + ";" + std::to_string(i.second.positionY) + ";" + std::to_string(i.second.rotation) + "!";
+                    map = map + std::to_string(i.second.playerId) + ";" + i.second.name + ";" + std::to_string(i.second.type) + ";" + std::to_string(i.second.positionX) + ";" + std::to_string(i.second.positionY) + ";" + std::to_string(i.second.rotation) + ";" + std::to_string(i.second.health) + "!";
                 }
                 map += "~";
 
