@@ -1,3 +1,0 @@
-/mnt/c/Users/Admin/Desktop/Unity/GitHub/sk2-projekt/build/CMakeFiles/serwer.dir
-/mnt/c/Users/Admin/Desktop/Unity/GitHub/sk2-projekt/build/CMakeFiles/edit_cache.dir
-/mnt/c/Users/Admin/Desktop/Unity/GitHub/sk2-projekt/build/CMakeFiles/rebuild_cache.dir
