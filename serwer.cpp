@@ -231,7 +231,7 @@ void handleMsgShoot(int playerId, const char* del) {
     tcpSendMessageToPlayers(shootMessage.c_str(), shootMessage.size());
 }
 
-void processMessage(int playerId, int clientFd, std::string& message, char* rawBuffer, int rawCount) {
+void processMessage(int playerId, int clientFd, std::string& message) {
     std::vector<char> msgBuf(message.begin(), message.end());
     msgBuf.push_back('\0');
 
@@ -281,7 +281,7 @@ void tpcHandleMessageFromClient(epoll_event ee) {
         std::string message = players[playerId].inputBuffer.substr(0, pos);
         players[playerId].inputBuffer.erase(0, pos + 1);
 
-        processMessage(playerId, clientFd, message, buffer, count);
+        processMessage(playerId, clientFd, message);
     }
 }
 
@@ -584,10 +584,7 @@ int getaddrinfo_socket_bind_listen(int sockType, const char *port) {
     if (sockFd == -1) error(1, errno, "socket failed");
 
     char result_host[NI_MAXHOST], result_port[NI_MAXSERV];
-    getnameinfo(res->ai_addr, res->ai_addrlen, result_host, NI_MAXHOST, result_port, NI_MAXSERV, 0);
-
-
-    // TO DO - add error when result port is different than requested;
+    getnameinfo(res->ai_addr, res->ai_addrlen, result_host, NI_MAXHOST, result_port, NI_MAXSERV, NI_NUMERICSERV);
 
     if(atoi(port) != atoi(result_port)){
         printf("Failed creating socket at port: %s\n", port);
